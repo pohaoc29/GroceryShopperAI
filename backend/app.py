@@ -149,15 +149,15 @@ async def post_message(payload: MessagePayload, username: str = Depends(get_curr
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    # Optional auth via query param token
     await manager.connect(websocket)
     try:
         while True:
-            # We don't expect messages from client over WS; ignore/echo if any
-            data = await websocket.receive_text()
-            await websocket.send_json({"type": "ack", "echo": data})
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
+            await websocket.receive_text()          
+        pass
+    except Exception as e:
+        print(f"[WS] error: {e}")                   
+    finally:
+        manager.disconnect(websocket)           
 
 # Serve frontend
 app.mount("/", StaticFiles(directory="../frontend", html=True), name="static")
