@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from db import SessionLocal, init_db, User, Message, Room, RoomMember
 from auth import get_password_hash, verify_password, create_access_token, get_current_user_token
 from websocket_manager import ConnectionManager
-from llm import chat_completion
+from llm import chat_completion, check_tinyllama_available
 
 load_dotenv()
 
@@ -33,6 +33,13 @@ app.add_middleware(
 )
 
 manager = ConnectionManager()
+
+# Global progress tracking
+download_progress = {
+    "status": "idle",  # idle, downloading, completed, failed
+    "progress": 0,     # 0-100
+    "message": ""
+}
 
 # --------- Schemas ---------
 class AuthPayload(BaseModel):
@@ -72,7 +79,7 @@ async def broadcast_message(session: AsyncSession, msg: Message, room_id: int):
         }
     }, room_id)
 
-async def maybe_answer_with_llm(content: str, room_id: int):
+async def maybe_answer_with_llm(content: str, room_id: int, user_id: int):
     """Generate an LLM response if message mentions @gro"""
     if "@gro" not in content:
         return
@@ -83,11 +90,20 @@ async def maybe_answer_with_llm(content: str, room_id: int):
         "Provide concise, accurate answers suitable for a shared chat context. "
         "Cite facts succinctly when helpful and avoid extremely long messages."
     )
+    
+    # Get user's preferred LLM model
+    async with SessionLocal() as temp_session:
+        user = await temp_session.get(User, user_id)
+        if user and user.preferred_llm_model:
+            model_name = user.preferred_llm_model
+        else:
+            model_name = "gemini"
+    
     try:
         reply_text = await chat_completion([
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": llm_content}
-        ])
+        ], model_name=model_name)
     except Exception as e:
         reply_text = f"(LLM error) {e}"
     
@@ -111,7 +127,11 @@ async def signup(payload: AuthPayload, session: AsyncSession = Depends(get_db)):
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Username already taken")
     
-    u = User(username=payload.username, password_hash=get_password_hash(payload.password))
+    u = User(
+        username=payload.username, 
+        password_hash=get_password_hash(payload.password),
+        preferred_llm_model="gemini"  # Set default to OpenAI for reliability
+    )
     session.add(u)
     await session.commit()
     await session.refresh(u)
@@ -284,7 +304,7 @@ async def post_room_message(room_id: int, payload: MessagePayload, username: str
         await session.refresh(m)
         
         await broadcast_message(session, m, room_id)
-        asyncio.create_task(maybe_answer_with_llm(payload.content, room_id))
+        asyncio.create_task(maybe_answer_with_llm(payload.content, room_id, u.id))
         
         return {"ok": True, "id": m.id}
     except HTTPException:
@@ -294,6 +314,235 @@ async def post_room_message(room_id: int, payload: MessagePayload, username: str
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/users/llm-model")
+async def update_llm_model(payload: dict, username: str = Depends(get_current_user_token), session: AsyncSession = Depends(get_db)):
+    """Update user's preferred LLM model"""
+    model_name = payload.get("model")
+    if not model_name:
+        raise HTTPException(status_code=400, detail="model is required")
+    
+    # Validate if model exists
+    valid_models = ["tinyllama", "openai", "gemini"]
+    if model_name not in valid_models:
+        raise HTTPException(status_code=400, detail=f"Invalid model. Choose from: {valid_models}")
+    
+    # If tinyllama is selected, check if it's downloaded
+    if model_name == "tinyllama":
+        tinyllama_available = await check_tinyllama_available()
+        if not tinyllama_available:
+            raise HTTPException(
+                status_code=400, 
+                detail="tinyllama model not found. Please download it first with: /opt/homebrew/bin/ollama pull tinyllama"
+            )
+    
+    # If gemini is selected, check if API key is set
+    if model_name == "gemini":
+        gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
+        if not gemini_api_key:
+            raise HTTPException(
+                status_code=400, 
+                detail="gemini model not available. Please set GEMINI_API_KEY in backend env"
+            )
+    
+    # Get user and update model preference
+    res = await session.execute(select(User).where(User.username == username))
+    u = res.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    
+    u.preferred_llm_model = model_name
+    session.add(u)
+    await session.commit()
+    
+    return {"ok": True, "model": model_name}
+
+@app.get("/api/models/download-progress")
+async def get_download_progress(username: str = Depends(get_current_user_token)):
+    """Get current download progress"""
+    return download_progress
+
+@app.get("/api/users/llm-model")
+async def get_llm_model(username: str = Depends(get_current_user_token), session: AsyncSession = Depends(get_db), platform: str = "desktop"):
+    """Get user's preferred LLM model and check availability
+    
+    platform: 'ios', 'android', 'web', or 'desktop' (default)
+    - iOS/Android: only return openai (no local LLM support)
+    - Web/Desktop: return both tinyllama and openai (if Ollama available)
+    """
+    res = await session.execute(select(User).where(User.username == username))
+    u = res.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    
+    # Determine available models based on platform
+    is_mobile = platform.lower() in ["ios", "android"]
+    
+    if is_mobile:
+        # iOS/Android support OpenAI and Gemini
+        available_models = ["openai"]
+        tinyllama_available = False
+        # Gemini availability based on environment/config
+        gemini_available = bool(os.getenv("GEMINI_API_KEY"))
+        if gemini_available:
+            available_models.append("gemini")
+        # If user preference is tinyllama, change to openai
+        current_model = "openai" if u.preferred_llm_model == "tinyllama" else u.preferred_llm_model
+    else:
+        # Desktop/Web support tinyllama, openai and Gemini
+        available_models = ["tinyllama", "openai"]
+        tinyllama_available = await check_tinyllama_available()
+        # Gemini availability based on environment/config
+        gemini_available = bool(os.getenv("GEMINI_API_KEY"))
+        if gemini_available:
+            available_models.append("gemini")
+        current_model = u.preferred_llm_model
+    
+    return {
+        "model": current_model,
+        "available_models": available_models,
+        "tinyllama_available": tinyllama_available,
+        "tinyllama_download_command": "/opt/homebrew/bin/ollama pull tinyllama",
+        "gemini_available": gemini_available if 'gemini_available' in locals() else False,
+        "gemini_instructions": "Set GEMINI_API_KEY and GEMINI_MODEL in backend env to enable Gemini",
+        "platform": platform
+    }
+
+@app.post("/api/models/download-tinyllama")
+async def download_tinyllama(username: str = Depends(get_current_user_token)):
+    """Trigger tinyllama model download with progress tracking"""
+    import subprocess
+    import platform
+    
+    try:
+        # Check if already downloaded
+        tinyllama_available = await check_tinyllama_available()
+        if tinyllama_available:
+            download_progress["status"] = "completed"
+            download_progress["progress"] = 100
+            download_progress["message"] = "TinyLlama is already downloaded"
+            return {
+                "ok": True,
+                "message": "TinyLlama is already downloaded",
+                "status": "already_installed"
+            }
+        
+        # If download is already in progress, return current status
+        if download_progress["status"] == "downloading":
+            return {
+                "ok": True,
+                "message": "Download already in progress",
+                "status": "downloading"
+            }
+        
+        # Find the location of ollama command
+        ollama_cmd = None
+        
+        # Try direct execution
+        try:
+            subprocess.run(["ollama", "--version"], capture_output=True, check=True)
+            ollama_cmd = "ollama"
+        except Exception:
+            pass
+        
+        # Try macOS Homebrew path
+        if not ollama_cmd and platform.system() == "Darwin":
+            try:
+                subprocess.run(["/opt/homebrew/bin/ollama", "--version"], capture_output=True, check=True)
+                ollama_cmd = "/opt/homebrew/bin/ollama"
+            except Exception:
+                pass
+        
+        if not ollama_cmd:
+            raise HTTPException(
+                status_code=400,
+                detail="Ollama not found. Please install Ollama first: https://ollama.ai"
+            )
+        
+        # Set download status to in progress
+        download_progress["status"] = "downloading"
+        download_progress["progress"] = 0
+        download_progress["message"] = "Starting download..."
+        
+        # Run download in background task
+        asyncio.create_task(run_download_task(ollama_cmd))
+        
+        return {
+            "ok": True,
+            "message": "TinyLlama download started",
+            "status": "downloading"
+        }
+    
+    except Exception as e:
+        download_progress["status"] = "failed"
+        download_progress["message"] = str(e)
+        print(f"Error starting download: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to start download: {str(e)}"
+        )
+
+async def run_download_task(ollama_cmd: str):
+    """Background task: Run download and update progress"""
+    import subprocess
+    
+    try:
+        # Execute ollama pull tinyllama-1.1b-chat-v1.0.Q4_K_M
+        process = subprocess.Popen(
+            [ollama_cmd, "pull", "tinyllama-1.1b-chat-v1.0.Q4_K_M"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1
+        )
+        
+        # Simulate progress update (actual ollama output will tell us progress)
+        download_progress["progress"] = 10
+        download_progress["message"] = "Downloading model layers..."
+        
+        for line in process.stdout:
+            line = line.strip()
+            if line:
+                download_progress["message"] = line
+                
+                # Update progress based on output
+                if "pulling" in line.lower():
+                    # Try to extract percentage from output
+                    if "%" in line:
+                        try:
+                            percent = int(''.join(filter(str.isdigit, line.split('%')[0].split()[-1])))
+                            download_progress["progress"] = min(percent, 95)
+                        except:
+                            pass
+        
+        # Wait for process to complete
+        process.wait()
+        
+        if process.returncode == 0:
+            # Verify download successful
+            await asyncio.sleep(1)
+            tinyllama_available = await check_tinyllama_available()
+            
+            if tinyllama_available:
+                download_progress["status"] = "completed"
+                download_progress["progress"] = 100
+                download_progress["message"] = "TinyLlama downloaded successfully!"
+                print("TinyLlama download completed successfully")
+            else:
+                download_progress["status"] = "failed"
+                download_progress["message"] = "Download completed but model not found"
+        else:
+            download_progress["status"] = "failed"
+            download_progress["message"] = f"Download failed with return code {process.returncode}"
+            
+    except Exception as e:
+        download_progress["status"] = "failed"
+        download_progress["message"] = f"Error: {str(e)}"
+        print(f"Download task error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error: {str(e)}"
+        )
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

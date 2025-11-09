@@ -7,7 +7,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "mysql+asyncmy://chatuser:chatpass@localhost:3306/groceryshopperai")
+DATABASE_URL = os.getenv("DATABASE_URL", "mysql+asyncmy://chatuser:chatpass@127.0.0.1:3306/groceryshopperai")
+
+class Base(DeclarativeBase):
+    pass
 
 class GroceryItem(Base):
     __tablename__ = "grocery_items"
@@ -19,14 +22,12 @@ class GroceryItem(Base):
     rating_count: Mapped[int] = mapped_column(Integer, nullable=True)
     created_at: Mapped["DateTime"] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-class Base(DeclarativeBase):
-    pass
-
 class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     username: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
+    preferred_llm_model: Mapped[str] = mapped_column(String(50), default="tinyllama")
     created_at: Mapped["DateTime"] = mapped_column(DateTime(timezone=True), server_default=func.now())
     messages = relationship("Message", back_populates="user")
     room_members = relationship("RoomMember", back_populates="user")
