@@ -2,3 +2,29 @@
 .env.example
 .venv/
 __pycache__/
+
+.DS_Store
+
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.dart_tool/
+.metadata
+
+.vscode/
+.idea/
+
+# iOS build outputs
+flutter_frontend/ios/Pods/
+flutter_frontend/ios/Podfile.lock
+flutter_frontend/ios/Flutter/Flutter.podspec
+flutter_frontend/ios/Flutter/Generated.xcconfig
+flutter_frontend/ios/Flutter/ephemeral/
+flutter_frontend/ios/Flutter/App.framework
+flutter_frontend/ios/Flutter/Flutter.framework
+flutter_frontend/ios/Runner/GeneratedPluginRegistrant.*
+
+# Android
+android/.gradle/
+android/app/build/
