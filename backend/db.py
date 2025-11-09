@@ -29,14 +29,35 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     created_at: Mapped["DateTime"] = mapped_column(DateTime(timezone=True), server_default=func.now())
     messages = relationship("Message", back_populates="user")
+    room_members = relationship("RoomMember", back_populates="user")
+
+class Room(Base):
+    __tablename__ = "rooms"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    created_at: Mapped["DateTime"] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    messages = relationship("Message", back_populates="room")
+    members = relationship("RoomMember", back_populates="room")
+
+class RoomMember(Base):
+    __tablename__ = "room_members"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    joined_at: Mapped["DateTime"] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    room = relationship("Room", back_populates="members")
+    user = relationship("User", back_populates="room_members")
 
 class Message(Base):
     __tablename__ = "messages"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id", ondelete="CASCADE"))
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
     content: Mapped[str] = mapped_column(Text())
     is_bot: Mapped[bool] = mapped_column(Boolean(), default=False)
     created_at: Mapped["DateTime"] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    room = relationship("Room", back_populates="messages")
     user = relationship("User", back_populates="messages")
 
 engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
