@@ -97,6 +97,53 @@ INFO:     Application startup complete
 
 ## Step 5: Run Frontend
 
+### Flutter Installation
+Set up Flutter quickly on macOS, Windows, or Linux (Ubuntu) with the easiest available methods.
+
+#### Mac OS
+```bash
+brew install flutter
+```
+
+Verify Setup
+```bash
+flutter doctor
+```
+
+#### Linux / Ubuntu
+```bash
+sudo snap install flutter --classic
+```
+
+Verify Setup
+```bash
+flutter doctor
+```
+
+#### Windows
+**1. Download Flutter SDK**
+
+- Go to Flutter for Windows https://docs.flutter.dev/get-started
+- Download the latest Stable Channel ZIP
+- Extract it to:
+```makefile
+C:\src\flutter
+```
+
+**2. Add Flutter to PATH**
+
+- Search “Edit the system environment variables” → Environment Variables...
+- Add:
+```makefile
+C:\src\flutter\bin
+```
+
+Verify Setup
+```bash
+flutter doctor
+```
+
+---
 Choose ONE of the following:
 
 ### Option A: iOS (macOS only)
