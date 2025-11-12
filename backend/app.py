@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from db import SessionLocal, init_db, User, Message, Room, RoomMember
 from auth import get_password_hash, verify_password, create_access_token, get_current_user_token
 from websocket_manager import ConnectionManager
-from llm import chat_completion, AVAILABLE_MODELS, check_tinyllama_available
+from llm import chat_completion, AVAILABLE_MODELS
 
 load_dotenv()
 
