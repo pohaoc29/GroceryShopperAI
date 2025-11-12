@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-// Dark mode colors
-const Color kDarkBg = Color(0xFF064E3B);
-const Color kDarkAppBar = Color(0xFF0A3028);
-const Color kDarkCard = Color(0xFF0D3D2E);
+// Dark mode colors - Deep Ink Green Theme
+const Color kDarkBg = Color(0xFF081914);
+const Color kDarkAppBar = Color(0xFF0A2420);
+const Color kDarkCard = Color(0xFF123228);
 const Color kDarkText = Color(0xFFF3F4F6);
 const Color kDarkTextSecondary = Color(0xFFE8EFEB);
 
