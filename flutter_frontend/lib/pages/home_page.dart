@@ -279,59 +279,64 @@ class _HomePageState extends State<HomePage> {
     final unpinnedRooms = _getUnpinnedRooms();
 
     return Scaffold(
-      appBar: AppBar(
-        flexibleSpace: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Theme.of(context).brightness == Brightness.dark
-                    ? Colors.black.withOpacity(0.3)
-                    : Colors.black.withOpacity(0.15),
-                Colors.transparent,
+      appBar: PreferredSize(
+        preferredSize: Size.fromHeight(kToolbarHeight),
+        child: ClipRect(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Theme.of(context).brightness == Brightness.dark
+                      ? Colors.black.withOpacity(0.3)
+                      : Colors.black.withOpacity(0.15),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+            child: AppBar(
+              backgroundColor: Colors.transparent,
+              title: Text(
+                'Chats',
+                style: TextStyle(
+                  fontFamily: 'Boska',
+                  fontSize: 28,
+                  fontWeight: FontWeight.w700,
+                  color: Theme.of(context).appBarTheme.titleTextStyle?.color,
+                ),
+              ),
+              centerTitle: true,
+              elevation: 0,
+              actions: [
+                IconButton(
+                  icon: Icon(Icons.add),
+                  onPressed: () {
+                    setState(() {
+                      _showCreateForm = !_showCreateForm;
+                      if (_showCreateForm) {
+                        _showSearchForm = false;
+                        _searchController.clear();
+                      }
+                    });
+                  },
+                ),
+                IconButton(
+                  icon: Icon(Icons.search),
+                  onPressed: () {
+                    setState(() {
+                      _showSearchForm = !_showSearchForm;
+                      if (_showSearchForm) {
+                        _showCreateForm = false;
+                        _createRoomController.clear();
+                      }
+                    });
+                  },
+                ),
               ],
             ),
           ),
         ),
-        title: Text(
-          'Chats',
-          style: TextStyle(
-            fontFamily: 'Boska',
-            fontSize: 28,
-            fontWeight: FontWeight.w700,
-            color: Theme.of(context).appBarTheme.titleTextStyle?.color,
-          ),
-        ),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: Icon(Icons.add),
-            onPressed: () {
-              setState(() {
-                _showCreateForm = !_showCreateForm;
-                if (_showCreateForm) {
-                  _showSearchForm = false;
-                  _searchController.clear();
-                }
-              });
-            },
-          ),
-          IconButton(
-            icon: Icon(Icons.search),
-            onPressed: () {
-              setState(() {
-                _showSearchForm = !_showSearchForm;
-                if (_showSearchForm) {
-                  _showCreateForm = false;
-                  _createRoomController.clear();
-                }
-              });
-            },
-          ),
-        ],
-        backgroundColor: Colors.transparent,
-        elevation: 0,
       ),
       body: _isLoading
           ? Center(child: CircularProgressIndicator())
@@ -435,66 +440,62 @@ class _HomePageState extends State<HomePage> {
                                 ),
                               ),
                             Expanded(
-                              child: pinnedRooms.isEmpty &&
-                                      unpinnedRooms.isEmpty
-                                  ? Center(
-                                      child: Text(
-                                        _searchController.text.isEmpty
-                                            ? 'No rooms yet. Create one to get started!'
-                                            : 'No rooms found',
-                                        style: TextStyle(
-                                          color: kTextGray,
-                                          fontFamily: 'Satoshi',
+                              child:
+                                  pinnedRooms.isEmpty && unpinnedRooms.isEmpty
+                                      ? Center(
+                                          child: Text(
+                                            _searchController.text.isEmpty
+                                                ? 'No rooms yet. Create one to get started!'
+                                                : 'No rooms found',
+                                            style: TextStyle(
+                                              color: kTextGray,
+                                              fontFamily: 'Satoshi',
+                                            ),
+                                          ),
+                                        )
+                                      : ListView(
+                                          children: [
+                                            if (pinnedRooms.isNotEmpty) ...[
+                                              Padding(
+                                                padding: EdgeInsets.fromLTRB(
+                                                    16, 16, 16, 8),
+                                                child: Text(
+                                                  'Pinned',
+                                                  style: TextStyle(
+                                                    fontFamily: 'Satoshi',
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: kTextGray,
+                                                  ),
+                                                ),
+                                              ),
+                                              ...pinnedRooms
+                                                  .map((room) =>
+                                                      _buildRoomTile(room))
+                                                  .toList(),
+                                              SizedBox(height: 8),
+                                            ],
+                                            if (unpinnedRooms.isNotEmpty) ...[
+                                              Padding(
+                                                padding: EdgeInsets.fromLTRB(
+                                                    16, 8, 16, 8),
+                                                child: Text(
+                                                  'All Rooms',
+                                                  style: TextStyle(
+                                                    fontFamily: 'Satoshi',
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: kTextGray,
+                                                  ),
+                                                ),
+                                              ),
+                                              ...unpinnedRooms
+                                                  .map((room) =>
+                                                      _buildRoomTile(room))
+                                                  .toList(),
+                                            ],
+                                          ],
                                         ),
-                                      ),
-                                    )
-                                  : SingleChildScrollView(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          if (pinnedRooms.isNotEmpty) ...[
-                                            Padding(
-                                              padding: EdgeInsets.fromLTRB(
-                                                  16, 16, 16, 8),
-                                              child: Text(
-                                                'Pinned',
-                                                style: TextStyle(
-                                                  fontFamily: 'Satoshi',
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: kTextGray,
-                                                ),
-                                              ),
-                                            ),
-                                            ...pinnedRooms
-                                                .map((room) =>
-                                                    _buildRoomTile(room))
-                                                .toList(),
-                                            SizedBox(height: 8),
-                                          ],
-                                          if (unpinnedRooms.isNotEmpty) ...[
-                                            Padding(
-                                              padding: EdgeInsets.fromLTRB(
-                                                  16, 8, 16, 8),
-                                              child: Text(
-                                                'All Rooms',
-                                                style: TextStyle(
-                                                  fontFamily: 'Satoshi',
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: kTextGray,
-                                                ),
-                                              ),
-                                            ),
-                                            ...unpinnedRooms
-                                                .map((room) =>
-                                                    _buildRoomTile(room))
-                                                .toList(),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
                             ),
                           ],
                         ),

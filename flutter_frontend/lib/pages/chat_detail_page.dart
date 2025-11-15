@@ -380,38 +380,43 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        flexibleSpace: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Theme.of(context).brightness == Brightness.dark
-                    ? Colors.black.withOpacity(0.3)
-                    : Colors.black.withOpacity(0.15),
-                Colors.transparent,
+      appBar: PreferredSize(
+        preferredSize: Size.fromHeight(kToolbarHeight),
+        child: ClipRect(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Theme.of(context).brightness == Brightness.dark
+                      ? Colors.black.withOpacity(0.3)
+                      : Colors.black.withOpacity(0.15),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+            child: AppBar(
+              backgroundColor: Colors.transparent,
+              title: Text(
+                widget.roomName,
+                style: TextStyle(
+                  fontFamily: 'Boska',
+                  fontSize: 28,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              centerTitle: true,
+              elevation: 0,
+              actions: [
+                IconButton(
+                  icon: Icon(Icons.person_add),
+                  onPressed: _showInviteDialog,
+                ),
               ],
             ),
           ),
         ),
-        title: Text(
-          widget.roomName,
-          style: TextStyle(
-            fontFamily: 'Boska',
-            fontSize: 28,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        centerTitle: true,
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: Icon(Icons.person_add),
-            onPressed: _showInviteDialog,
-          ),
-        ],
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {

@@ -268,32 +268,37 @@ class _ContactsPageState extends State<ContactsPage> {
   }
 
   PreferredSizeWidget _buildGradientAppBar(String title) {
-    return AppBar(
-      flexibleSpace: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Theme.of(context).brightness == Brightness.dark
-                  ? Colors.black.withOpacity(0.3)
-                  : Colors.black.withOpacity(0.15),
-              Colors.transparent,
-            ],
+    return PreferredSize(
+      preferredSize: Size.fromHeight(kToolbarHeight),
+      child: ClipRect(
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Theme.of(context).brightness == Brightness.dark
+                    ? Colors.black.withOpacity(0.3)
+                    : Colors.black.withOpacity(0.15),
+                Colors.transparent,
+              ],
+            ),
+          ),
+          child: AppBar(
+            backgroundColor: Colors.transparent,
+            title: Text(
+              title,
+              style: TextStyle(
+                fontFamily: 'Boska',
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            centerTitle: true,
+            elevation: 0,
           ),
         ),
       ),
-      title: Text(
-        title,
-        style: TextStyle(
-          fontFamily: 'Boska',
-          fontSize: 28,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-      centerTitle: true,
-      backgroundColor: Colors.transparent,
-      elevation: 0,
     );
   }
 }
