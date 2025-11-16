@@ -189,6 +189,24 @@ class ApiClient {
   Future<Map<String, dynamic>> getDownloadProgress() async {
     return await get('/models/download-progress');
   }
+
+  // AI Planner - Generate group plan
+  Future<Map<String, dynamic>> generateAIPlan(int roomId,
+      {String? goal}) async {
+    final body = <String, dynamic>{'goal': goal ?? ''};
+    print(
+        '[ApiClient] Calling generateAIPlan for room $roomId with goal: $goal');
+    return await post('/rooms/$roomId/ai-plan', body);
+  }
+
+  // AI Matcher - Suggest invites and roles
+  Future<Map<String, dynamic>> generateAISuggestion(int roomId,
+      {String? goal}) async {
+    final body = <String, dynamic>{'goal': goal ?? ''};
+    print(
+        '[ApiClient] Calling generateAISuggestion for room $roomId with goal: $goal');
+    return await post('/rooms/$roomId/ai-matching', body);
+  }
 }
 
 final apiClient = ApiClient();

@@ -1,7 +1,7 @@
 import os
 import asyncio
 from typing import Optional, List
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status, Request, Body
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -626,7 +626,7 @@ async def websocket_endpoint(websocket: WebSocket):
 # --------- LLM functions ---------
 # Planning
 @app.post("/api/rooms/{room_id}/ai-plan")
-async def api_generate_plan(room_id: int, payload: AIPlanPayload, username: str = Depends(get_current_user_token), session: AsyncSession = Depends(get_db),):
+async def api_generate_plan(room_id: int, payload: AIPlanPayload = Body(...), username: str = Depends(get_current_user_token), session: AsyncSession = Depends(get_db),):
     """
     Generate an AI-generated group plan for a room.
     Goal is optional - if not provided, it will be inferred from chat history.
@@ -668,7 +668,7 @@ async def api_generate_plan(room_id: int, payload: AIPlanPayload, username: str 
 
 # Matching Suggestion
 @app.post("/api/rooms/{room_id}/ai-matching")
-async def api_generate_matching(room_id: int, payload: AIMatchingPayload, username: str = Depends(get_current_user_token), session: AsyncSession = Depends(get_db),):
+async def api_generate_matching(room_id: int, payload: AIMatchingPayload = Body(...), username: str = Depends(get_current_user_token), session: AsyncSession = Depends(get_db),):
     """
     AI Matching Suggestion module:
     - Extract goal automatically unless provided by frontend
