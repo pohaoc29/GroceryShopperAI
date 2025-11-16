@@ -179,6 +179,18 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     print('[Chat] Sending message: $text');
     _messageController.clear();
 
+    // Check if message starts with @plan or @match command
+    if (text.startsWith('@plan')) {
+      await _handlePlanCommand(text);
+      return;
+    }
+
+    if (text.startsWith('@match')) {
+      await _handleMatchCommand(text);
+      return;
+    }
+
+    // Regular message
     try {
       print('[Chat] Room ID: ${widget.roomId}');
       final result =
@@ -191,6 +203,191 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         SnackBar(content: Text('Error: $e')),
       );
     }
+  }
+
+  Future<void> _handlePlanCommand(String message) async {
+    // Extract goal from message: "@plan <goal>"
+    final goal = message.replaceFirst('@plan', '').trim();
+    print('[Chat] Executing @plan command with goal: $goal');
+
+    try {
+      final roomId = int.parse(widget.roomId);
+      final result = await apiClient.generateAIPlan(roomId,
+          goal: goal.isNotEmpty ? goal : null);
+      print('[Chat] Plan result: $result');
+
+      // Show result in dialog
+      if (mounted) {
+        _showAIResult(
+          title: 'AI Plan',
+          result: result,
+        );
+      }
+    } catch (e) {
+      print('[Chat] Error in @plan command: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Plan generation failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleMatchCommand(String message) async {
+    // Extract goal from message: "@match <optional goal>"
+    final goal = message.replaceFirst('@match', '').trim();
+    print('[Chat] Executing @match command with goal: $goal');
+
+    try {
+      final roomId = int.parse(widget.roomId);
+      final result = await apiClient.generateAISuggestion(roomId,
+          goal: goal.isNotEmpty ? goal : null);
+      print('[Chat] Suggestion result: $result');
+
+      // Show result in dialog
+      if (mounted) {
+        _showAIResult(
+          title: 'AI Matching',
+          result: result,
+        );
+      }
+    } catch (e) {
+      print('[Chat] Error in @match command: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Matching suggestion failed: $e')),
+        );
+      }
+    }
+  }
+
+  void _showAIResult(
+      {required String title, required Map<String, dynamic> result}) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (result.containsKey('plan')) ...[
+                _buildPlanContent(result['plan']),
+              ] else if (result.containsKey('suggestions')) ...[
+                _buildSuggestionContent(result['suggestions']),
+              ] else ...[
+                Text('Response: ${jsonEncode(result)}'),
+              ]
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlanContent(dynamic plan) {
+    if (plan is Map) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (plan['event'] != null) ...[
+            Text(
+              'Event: ${plan['event']}',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+          ],
+          if (plan['items'] != null && (plan['items'] is List)) ...[
+            const Text(
+              'Items:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            ...(plan['items'] as List).map((item) {
+              final itemText = item is Map
+                  ? '${item['name']} - ${item['assigned_to'] ?? 'Unassigned'}'
+                  : item.toString();
+              return Padding(
+                padding: const EdgeInsets.only(left: 8.0, top: 4),
+                child: Text('• $itemText'),
+              );
+            }),
+            const SizedBox(height: 8),
+          ],
+          if (plan['timeline'] != null && (plan['timeline'] is List)) ...[
+            const Text(
+              'Timeline:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            ...(plan['timeline'] as List).map((time) {
+              return Padding(
+                padding: const EdgeInsets.only(left: 8.0, top: 4),
+                child: Text('• $time'),
+              );
+            }),
+            const SizedBox(height: 8),
+          ],
+          if (plan['narrative'] != null) ...[
+            const Text(
+              'Details:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            Text(plan['narrative'].toString()),
+          ],
+        ],
+      );
+    }
+    return Text('Plan: ${plan.toString()}');
+  }
+
+  Widget _buildSuggestionContent(dynamic suggestions) {
+    if (suggestions is Map) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (suggestions['suggested_invites'] != null) ...[
+            const Text(
+              'Suggested Invites:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            ...(suggestions['suggested_invites'] as List).map((invite) {
+              return Padding(
+                padding: const EdgeInsets.only(left: 8.0, top: 4),
+                child: Text('• $invite'),
+              );
+            }),
+            const SizedBox(height: 8),
+          ],
+          if (suggestions['missing_roles'] != null) ...[
+            const Text(
+              'Missing Roles:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            ...(suggestions['missing_roles'] as List).map((role) {
+              return Padding(
+                padding: const EdgeInsets.only(left: 8.0, top: 4),
+                child: Text('• $role'),
+              );
+            }),
+            const SizedBox(height: 8),
+          ],
+          if (suggestions['narrative'] != null) ...[
+            const Text(
+              'Details:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            Text(suggestions['narrative'].toString()),
+          ],
+        ],
+      );
+    }
+    return Text('Suggestions: ${suggestions.toString()}');
   }
 
   List<TextSpan> _buildMessageSpans(String content) {
