@@ -1,5 +1,6 @@
-print("🔥 Running backend version: 2025-11-16 01:00")
+print("🔥 Running backend version: 2025-11-16 15:00")
 import os
+import json
 import asyncio
 from typing import Optional, List
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status, Request, Body
@@ -11,14 +12,19 @@ from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from dotenv import load_dotenv
 
-from db import SessionLocal, init_db, User, Message, Room, RoomMember, Inventory
+from db import SessionLocal, init_db, User, Message, Room, RoomMember, Inventory, GroceryItem
 from auth import get_password_hash, verify_password, create_access_token, get_current_user_token
 from websocket_manager import ConnectionManager
 from llm import chat_completion, AVAILABLE_MODELS
 
+# LLM modules
+from llm_modules.llm_utils import format_chat_history
 from llm_modules.planner import generate_group_plan
 from llm_modules.matcher import suggest_invites
-from llm_modules.llm_utils import format_chat_history
+from llm_modules.inventory_analyzer import analyze_inventory
+from llm_modules.menu_generator import generate_menu
+from llm_modules.procurement_planner import generate_restock_plan
+from llm_modules.chat_procurement_planner import generate_procurement_plan
 
 load_dotenv()
 
@@ -82,6 +88,19 @@ async def broadcast_message(session: AsyncSession, msg: Message, room_id: int):
             "created_at": str(msg.created_at)
         }
     }, room_id)
+    
+async def broadcast_ai_event(room_id: int, event_type: str, narrative: str, payload: dict):
+    """
+    Sends a strutured AI event to frontend for rendering custom UI.
+    """
+    await manager.broadcast({
+        "type": "ai_event",
+        "event": event_type,  # e.g. "inventory_analysis", "menu_suggestions", "restock_plan", "procurement_plan"
+        "room_id": room_id,
+        "narrative": narrative,
+        "payload": payload,
+    }, room_id)
+    
 
 async def handle_inventory_command(content: str, room_id: int, user_id: int):
     """
@@ -183,21 +202,139 @@ async def handle_inventory_command(content: str, room_id: int, user_id: int):
         await session.commit()
         await session.refresh(bot_msg)
         await broadcast_message(session, bot_msg, room_id)
+        
+# AI Commands: @gro analyze / menu / restock (inventory + catalog)   
+async def handle_gro_command(kind: str, room_id: int, user_id: int):
+    """
+    kind: "analyze", "menu", restock"
+    Use inventory + grocery catalog (if needed) and LLM modules.
+    """
+    async with SessionLocal() as session:
+        # get user model
+        user = await session.get(User, user_id)
+        model_name = user.preferred_llm_model if user else "openai"
+        
+        # get inventory
+        inv_res = await session.execute(
+            select(Inventory).where(Inventory.user_id == user_id)
+        )
+        inventory_items = [
+            {
+                "product_name": row.product_name,
+                "stock": row.stock,
+                "safety_stock_level": row.safety_stock_level
+            }
+            for row in inv_res.scalars().all()
+        ]
+        
+        # get grocery catalog (for restock plan)
+        if kind == "restock":
+            gro_res = await session.execute(select(GroceryItem).limit(300))
+            grocery_list = [
+                {
+                    "title": g.title,
+                    "sub_category": g.sub_category,
+                    "price": float(g.price),
+                    "rating": g.rating_value or 0.0,
+                }
+                for g in gro_res.scalars().all()
+            ]
+        else:
+            grocery_list = []
+            
+        # Run AI Module
+        if kind == "analyze":
+            ai_result = await analyze_inventory(inventory_items, model_name=model_name)
+            event_type = "inventory_analysis"
+        elif kind == "menu":
+            ai_result = await generate_menu(inventory_items, model_name=model_name)
+            event_type = "menu_suggeestions"
+        elif kind == "restock":
+            ai_result = await generate_restock_plan(inventory_items, grocery_list, model_name=model_name)
+            event_type = "restock_plan"
+        else:
+            ai_result = {"narrative": "Unknown command.", "data": {}}
+            event_type = "unknown"
+            
+        narrative = ai_result.get("narrative", "AI suggestion generated.")
+        await broadcast_ai_event(room_id, event_type, narrative, ai_result)
+        
+        # Send a short chat message as well
+        msg_text_map = {
+            "inventory_analysis": "Generated inventory analysis for your current stock.",
+            "menu_suggestions": "Generated menu suggestions based on your inventory.",
+            "restock_plan": "Generated a suggested restock plan.",
+        }
+        chat_text = msg_text_map.get(event_type, "Generated AI suggestion.")
+        
+        bot_msg = Message(
+            room_id=room_id,
+            user_id=None,
+            content=chat_text,
+            is_bot=True,
+        )
+        session.add(bot_msg)
+        await session.commit()
+        await session.refresh(bot_msg)
+        await broadcast_message(session, bot_msg, room_id)
 
+# Router for @inventory / @gro commands / default LLM Chat
 async def maybe_answer_with_llm(content: str, room_id: int, user_id: int):
     """
+    Central logic:
     - If message contains @inventory → handle inventory command (no LLM call)
-    - If message contains @gro → call LLM as before
+    - @gro analyze/menu/restock -> AI modules + ai_event
+    - @gro plan -> chat-based procurement_plan + ai_event
+    - If message is plain @gro → call LLM as before
     """
+    if not content:
+        return
+    
     # 1) Inventory flow
-    if "@inventory" in content:
+    if "@inventory" in content.lower():
         await handle_inventory_command(content, room_id, user_id)
         # You can still allow @gro in the same message if you want,
         # but simplest is to return here:
         return
+    
+    # ==== AI Commands ====
+    if "@gro analyze" in content.lower():
+        await handle_gro_command("analyze", room_id, user_id)
+        return
+    
+    if "@gro menu" in content.lower():
+        await handle_gro_command("menu", room_id, user_id)
+        return
+    
+    if "@grp restock" in content.lower():
+        await handle_gro_command("restock", room_id, user_id)
+        return
+    
+    if "@gro plan" in content.lower():
+        async with SessionLocal() as session:
+            user = await session.get(User, user_id)
+            model_name = user.preferred_llm_model if user else "openai"
+            
+            msgs_res = await session.execute(
+                select(Message)
+                .where(Message.room_id == room_id)
+                .order_by(Message.created_at)
+            )
+            msgs = msgs_res.scalars().all()
+            chat_history = [
+                {"role": "assistant" if m.is_bot else "user", "content": m.content}
+                for m in msgs
+            ]
+        
+        result = await generate_procurement_plan(chat_history=chat_history, model_name=model_name)
+        
+        narrative = result.get("narrative", "Here is your procurement plan.")
+        await broadcast_ai_event(room_id, "procurement_plan", narrative, result)
+        return
+    
 
     # 2) Regular LLM flow with @gro
-    if "@gro" not in content:
+    if "@gro" not in content.lower():
         return
 
     # Remove @gro tag from content before sending to LLM
@@ -239,6 +376,7 @@ async def maybe_answer_with_llm(content: str, room_id: int, user_id: int):
         await session.commit()
         await session.refresh(bot_msg)
         await broadcast_message(session, bot_msg, room_id)
+    
 
 # --------- Routes ---------
 @app.on_event("startup")
