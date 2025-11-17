@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'dart:convert';
 import '../models/message.dart';
+import '../models/ai_event.dart';
 import '../themes/colors.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
@@ -154,6 +155,12 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
             _messages.add(msg);
           });
           _scrollToBottom();
+        }
+      } else if (data['type'] == 'ai_event') {
+        // Handle AI events with structured data
+        final aiEvent = AIEvent.fromJson(data);
+        if (mounted) {
+          _showAIEventDialog(aiEvent);
         }
       }
     } catch (e) {
@@ -763,7 +770,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                         Expanded(
                           child: FrostedGlassTextField(
                             controller: _messageController,
-                            placeholder: 'Type a message...',
+                            placeholder: 'Try: @gro analyze, @gro menu, @gro restock, @gro plan',
                           ),
                         ),
                         SizedBox(width: 8),
@@ -790,6 +797,450 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
           );
         },
       ),
+    );
+  }
+
+  /// Display AI Event in a dialog
+  void _showAIEventDialog(AIEvent event) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          _getEventTitle(event),
+          style: const TextStyle(
+            fontFamily: 'Satoshi',
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: kPrimary,
+          ),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Narrative
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: kPrimary.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: kPrimary.withOpacity(0.2),
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  event.narrative,
+                  style: const TextStyle(
+                    fontFamily: 'Satoshi',
+                    fontSize: 14,
+                    color: kTextDark,
+                    height: 1.5,
+                  ),
+                ),
+              ),
+              SizedBox(height: 16),
+              // Render specific content based on event type
+              if (event.isInventoryEvent)
+                _buildInventoryContent(event)
+              else if (event.isMenuEvent)
+                _buildMenuContent(event)
+              else if (event.isRestockEvent)
+                _buildRestockContent(event)
+              else if (event.isProcurementEvent)
+                _buildProcurementContent(event)
+              else
+                Text(
+                  'Event Data: ${event.payload}',
+                  style: const TextStyle(
+                    fontFamily: 'Satoshi',
+                    fontSize: 12,
+                    color: kTextGray,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'Close',
+              style: TextStyle(color: kPrimary, fontFamily: 'Satoshi'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getEventTitle(AIEvent event) {
+    switch (event.eventType) {
+      case 'inventory_analysis':
+        return 'Inventory Analysis';
+      case 'menu':
+        return 'Menu Suggestions';
+      case 'restock_plan':
+        return 'Restock Plan';
+      case 'procurement_plan':
+        return 'Procurement Plan';
+      default:
+        return 'AI Suggestion';
+    }
+  }
+
+  Widget _buildInventoryContent(AIEvent event) {
+    final payload = event.payload;
+    final lowStock = payload['low_stock'] as List? ?? [];
+    final healthy = payload['healthy'] as List? ?? [];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (lowStock.isNotEmpty) ...[
+          const Text(
+            'Low Stock Items',
+            style: TextStyle(
+              fontFamily: 'Satoshi',
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: Colors.red,
+            ),
+          ),
+          SizedBox(height: 8),
+          ...lowStock.map((item) {
+            final product = item is Map ? item['product'] ?? 'Item' : 'Item';
+            final stock = item is Map ? item['stock'] ?? '0' : '0';
+            final safetyStock = item is Map ? item['safety_stock'] ?? '0' : '0';
+
+            return Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Container(
+                padding: EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.red.withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            product,
+                            style: const TextStyle(
+                              fontFamily: 'Satoshi',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: kTextDark,
+                            ),
+                          ),
+                          Text(
+                            'Stock: $stock / Safety: $safetyStock',
+                            style: const TextStyle(
+                              fontFamily: 'Satoshi',
+                              fontSize: 10,
+                              color: kTextGray,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.warning, color: Colors.red, size: 18),
+                  ],
+                ),
+              ),
+            );
+          }),
+          SizedBox(height: 12),
+        ],
+        if (healthy.isNotEmpty) ...[
+          const Text(
+            'Healthy Stock',
+            style: TextStyle(
+              fontFamily: 'Satoshi',
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: Colors.green,
+            ),
+          ),
+          SizedBox(height: 8),
+          ...healthy.map((item) {
+            final product = item is Map ? item['product'] ?? 'Item' : 'Item';
+            final stock = item is Map ? item['stock'] ?? '0' : '0';
+
+            return Padding(
+              padding: EdgeInsets.only(bottom: 6),
+              child: Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.green, size: 16),
+                  SizedBox(width: 8),
+                  Text(
+                    '$product ($stock)',
+                    style: const TextStyle(
+                      fontFamily: 'Satoshi',
+                      fontSize: 12,
+                      color: kTextDark,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildMenuContent(AIEvent event) {
+    final payload = event.payload;
+    final dishes = payload['dishes'] as List? ?? [];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (dishes.isNotEmpty) ...[
+          const Text(
+            'Recommended Dishes',
+            style: TextStyle(
+              fontFamily: 'Satoshi',
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: kTextDark,
+            ),
+          ),
+          SizedBox(height: 8),
+          ...dishes.map((dish) {
+            final name = dish is Map ? dish['name'] ?? 'Dish' : 'Dish';
+            final ingredients = dish is Map ? dish['ingredients'] ?? [] : [];
+
+            return Padding(
+              padding: EdgeInsets.only(bottom: 10),
+              child: Container(
+                padding: EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.orange.withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: const TextStyle(
+                        fontFamily: 'Satoshi',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: kTextDark,
+                      ),
+                    ),
+                    if (ingredients.isNotEmpty) ...[
+                      SizedBox(height: 6),
+                      Text(
+                        'Ingredients: ${(ingredients as List).join(", ")}',
+                        style: const TextStyle(
+                          fontFamily: 'Satoshi',
+                          fontSize: 10,
+                          color: kTextGray,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildRestockContent(AIEvent event) {
+    final payload = event.payload;
+    final recommendations = payload['recommendations'] as List? ?? [];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (recommendations.isNotEmpty) ...[
+          const Text(
+            'Recommended Items',
+            style: TextStyle(
+              fontFamily: 'Satoshi',
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: kTextDark,
+            ),
+          ),
+          SizedBox(height: 8),
+          ...recommendations.map((item) {
+            final title = item is Map ? item['title'] ?? 'Item' : 'Item';
+            final quantity = item is Map ? item['suggested_quantity'] ?? '1' : '1';
+            final price = item is Map ? item['price'] ?? '0' : '0';
+
+            return Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Container(
+                padding: EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.green.withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: const TextStyle(
+                              fontFamily: 'Satoshi',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: kTextDark,
+                            ),
+                          ),
+                          Text(
+                            'Qty: $quantity',
+                            style: const TextStyle(
+                              fontFamily: 'Satoshi',
+                              fontSize: 10,
+                              color: kTextGray,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      '\$$price',
+                      style: const TextStyle(
+                        fontFamily: 'Satoshi',
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildProcurementContent(AIEvent event) {
+    final payload = event.payload;
+    final items = payload['items'] as List? ?? [];
+    final timeline = payload['timeline'] as List? ?? [];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (items.isNotEmpty) ...[
+          const Text(
+            'Procurement Items',
+            style: TextStyle(
+              fontFamily: 'Satoshi',
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: kTextDark,
+            ),
+          ),
+          SizedBox(height: 8),
+          ...items.map((item) {
+            final name = item is Map ? item['name'] ?? 'Item' : 'Item';
+            final assignedTo = item is Map ? item['assigned_to'] ?? 'Unassigned' : 'Unassigned';
+
+            return Padding(
+              padding: EdgeInsets.only(bottom: 6),
+              child: Row(
+                children: [
+                  Icon(Icons.check_circle_outline, color: kPrimary, size: 16),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          style: const TextStyle(
+                            fontFamily: 'Satoshi',
+                            fontSize: 12,
+                            color: kTextDark,
+                          ),
+                        ),
+                        Text(
+                          'Assigned to: $assignedTo',
+                          style: const TextStyle(
+                            fontFamily: 'Satoshi',
+                            fontSize: 10,
+                            color: kTextGray,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+        if (timeline.isNotEmpty) ...[
+          SizedBox(height: 12),
+          const Text(
+            'Timeline',
+            style: TextStyle(
+              fontFamily: 'Satoshi',
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: kTextDark,
+            ),
+          ),
+          SizedBox(height: 8),
+          ...timeline.map((step) {
+            return Padding(
+              padding: EdgeInsets.only(bottom: 6),
+              child: Row(
+                children: [
+                  Icon(Icons.schedule, color: kSecondary, size: 16),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      step.toString(),
+                      style: const TextStyle(
+                        fontFamily: 'Satoshi',
+                        fontSize: 11,
+                        color: kTextDark,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ],
     );
   }
 }
