@@ -16,18 +16,27 @@ async def analyze_inventory(inventory_items, low_stock_items, healthy_items, gro
     system_prompt = """
     You are an Inventory Analyst.
 
-    IMPORTANT:
-    - Low-stock / healthy classification is ALREADY computed by the backend.
-    - DO NOT recalculate stock status.
-    - Only generate narrative and confirm the structure.
-    - Grocery items are already matched; do NOT invent items.
+    BACKEND HAS ALREADY CLASSIFIED THE INVENTORY.
+    You MUST NOT:
+    - recalculate stock levels
+    - reassign items
+    - add or remove items
+    - change stock numbers
 
-    JSON ONLY:
+    Your job is ONLY:
+    1. Echo the same "low_stock" and "healthy" lists exactly as provided.
+    2. Generate a helpful narrative.
+    3. Output STRICT JSON with this structure:
+
     {
-        "narrative": "<string>",
+        "narrative": "<text>",
         "low_stock": [...],
         "healthy": [...]
     }
+
+    IMPORTANT:
+    - Your output must include "low_stock" and "healthy" EXACTLY matching the provided lists.
+    - JSON ONLY. No explanation outside JSON.
     """
     
     user_payload = {
@@ -45,8 +54,13 @@ async def analyze_inventory(inventory_items, low_stock_items, healthy_items, gro
     
     parsed = extract_json(raw)
     
+    # Add helpful CTA
+    final_narrative = parsed.get("narrative", "Inventory analysis generated.")
+    final_narrative += " If you need a restock plan, type '@gro restock'."
+
+    
     return {
-        "narrative": parsed.get("narrative", "Inventory analysis generated."),
-        "low_stock": low_stock_items,
-        "healthy": healthy_items
+        "narrative": final_narrative,
+        "low_stock": parsed.get("low_stock", low_stock_items),
+        "healthy": parsed.get("healthy", healthy_items),
     }
