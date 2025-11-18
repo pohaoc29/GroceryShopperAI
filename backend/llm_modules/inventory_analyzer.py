@@ -54,7 +54,7 @@ async def analyze_inventory(inventory_items: List[Dict[str, Any]], grocery_items
             {
                 "product_name": "<string>",
                 "stock": <int>,
-                "safety_stock_lvel": <int>
+                "safety_stock_level": <int>
             }
         ]
     }
