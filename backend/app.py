@@ -236,7 +236,7 @@ async def handle_gro_command(kind: str, room_id: int, user_id: int):
             {
                 "product_name": row.product_name,
                 "stock": row.stock,
-                "safety_stock_level": row.safety_stock_level
+                "safety_stock": row.safety_stock_level
             }
             for row in inv_res.scalars().all()
         ]
