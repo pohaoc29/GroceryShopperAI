@@ -13,25 +13,39 @@ async def generate_restock_plan(low_stock_items, grocery_items, model_name:str =
     
     system_prompt = """
     You are an AI Procurement Planner for a restaurant.
-    
-    IMPORTANT:
-    - Low-stock items are ALREADY identified.
-    - Produce a shopping plan ONLY for these items.
-    - Grocery_items list is pre-filtered; do NOT invent items.
 
-    JSON OUTPUT:
+    BACKEND HAS ALREADY IDENTIFIED low_stock ITEMS.
+    You MUST NOT:
+    - add new items
+    - remove items
+    - change stock numbers
+    - invent products not provided in grocery_items
+
+    Your job:
+    1. Echo the low_stock list as-is.
+    2. For EACH low-stock item, generate a recommended purchase plan.
+    3. Use grocery_items for price references.
+    4. Output STRICT JSON ONLY:
+
     {
         "goal": "",
-        "summary": "<string>",
-        "narrative": "<string>",
+        "summary": "<text>",
+        "narrative": "<text>",
         "items": [
             {
-                "name": "<string>",
-                "quantity": "<string or number>",
-                "notes": "<string>"
+                "name": "<low_stock product name>",
+                "quantity": <int>,
+                "price_estimate": <float>,
+                "notes": "<reason>"
             }
-        ]
+        ],
+        "low_stock": [... echo ...]
     }
+
+    RULES:
+    - "items" must NOT be empty.
+    - One entry per low-stock item.
+    - Price must come from grocery_items.
     """
     
     
@@ -49,11 +63,12 @@ async def generate_restock_plan(low_stock_items, grocery_items, model_name:str =
     )
     
     
-    data = extract_json(raw)
+    parsed = extract_json(raw)
 
     return {
         "goal": "",
-        "summary": data.get("summary", "Generated restock plan."),
-        "narrative": data.get("narrative", "Here is your restock summary."),
-        "items": data.get("items", []),
+        "summary": parsed.get("summary", "Generated restock plan."),
+        "narrative": parsed.get("narrative", "Here is your restock summary."),
+        "items": parsed.get("items", []),
+        "low_stock": parsed.get("low_stock", low_stock_items),
     }
