@@ -19,7 +19,7 @@ async def analyze_inventory(inventory_items: List[Dict[str, Any]], grocery_items
     Your responsibilities:
     1. Identify items that are low or critical stock.
     2. Estimate recommended restock quantity such that:
-       recommended_restock_qty = max(0, safety_stock - stock) + safety_buffer
+       recommended_restock_qty = max(0, safety_stock_level - stock) + safety_buffer
        (safety_buffer = 1–3)
     3. Provide a friendly summary narrative.
     4. Recommend suitable grocery catalog items for restock if needed.
@@ -38,7 +38,7 @@ async def analyze_inventory(inventory_items: List[Dict[str, Any]], grocery_items
             {
                 "product_name": "<string>",
                 "stock": <int>,
-                "safety_stock": <int>,
+                "safety_stock_level": <int>,
                 "status": "low" | "critical",
                 "recommended_restock_qty": <int>,
                 "recommended_grocery_items": [
@@ -54,7 +54,7 @@ async def analyze_inventory(inventory_items: List[Dict[str, Any]], grocery_items
             {
                 "product_name": "<string>",
                 "stock": <int>,
-                "safety_stock": <int>
+                "safety_stock_lvel": <int>
             }
         ]
     }

@@ -59,7 +59,7 @@ WS example:
       {
         "product_name": "Olive Oil",
         "stock": 12,
-        "safety_stock": 5
+        "safety_stock_level": 5
       }
     ]
   }
