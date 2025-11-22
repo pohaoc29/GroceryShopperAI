@@ -12,7 +12,7 @@ from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from dotenv import load_dotenv
 
-from db import SessionLocal, init_db, User, Message, Room, RoomMember, Inventory, GroceryItem
+from db import SessionLocal, init_db, User, Message, Room, RoomMember, Inventory, GroceryItem, ShoppingList
 from auth import get_password_hash, verify_password, create_access_token, get_current_user_token
 from websocket_manager import ConnectionManager
 from llm import chat_completion, AVAILABLE_MODELS
@@ -65,6 +65,15 @@ class AIPlanPayload(BaseModel):
     
 class AIMatchingPayload(BaseModel):
     goal: Optional[str] = None
+
+class InventoryItemPayload(BaseModel):
+    product_name: str
+    stock: int
+    safety_stock_level: int
+
+class ShoppingListPayload(BaseModel):
+    title: str
+    items_json: str # JSON string of items list
 
 # --------- Dependencies ---------
 async def get_db() -> AsyncSession:
@@ -794,6 +803,148 @@ async def update_llm_model(payload: dict, username: str = Depends(get_current_us
     
     return {"ok": True, "model": model_name}
 
+@app.get("/api/inventory")
+async def get_inventory(username: str = Depends(get_current_user_token), session: AsyncSession = Depends(get_db)):
+    """Get user's inventory"""
+    res = await session.execute(select(User).where(User.username == username))
+    u = res.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    
+    inv_res = await session.execute(
+        select(Inventory).where(Inventory.user_id == u.id).order_by(Inventory.product_name)
+    )
+    items = inv_res.scalars().all()
+    
+    return {
+        "items": [
+            {
+                "product_id": item.product_id,
+                "product_name": item.product_name,
+                "stock": item.stock,
+                "safety_stock_level": item.safety_stock_level
+            }
+            for item in items
+        ]
+    }
+
+@app.post("/api/inventory")
+async def upsert_inventory_item(payload: InventoryItemPayload, username: str = Depends(get_current_user_token), session: AsyncSession = Depends(get_db)):
+    """Add or update an inventory item"""
+    res = await session.execute(select(User).where(User.username == username))
+    u = res.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    
+    # Check if item exists
+    existing_res = await session.execute(
+        select(Inventory).where(
+            (Inventory.user_id == u.id) & (Inventory.product_name == payload.product_name)
+        )
+    )
+    existing = existing_res.scalar_one_or_none()
+    
+    if existing:
+        existing.stock = payload.stock
+        existing.safety_stock_level = payload.safety_stock_level
+        session.add(existing)
+    else:
+        new_item = Inventory(
+            user_id=u.id,
+            product_name=payload.product_name,
+            stock=payload.stock,
+            safety_stock_level=payload.safety_stock_level
+        )
+        session.add(new_item)
+    
+    await session.commit()
+    return {"ok": True}
+
+@app.delete("/api/inventory/{product_id}")
+async def delete_inventory_item(product_id: int, username: str = Depends(get_current_user_token), session: AsyncSession = Depends(get_db)):
+    """Delete an inventory item"""
+    res = await session.execute(select(User).where(User.username == username))
+    u = res.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    
+    item = await session.get(Inventory, product_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+        
+    if item.user_id != u.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+        
+    await session.delete(item)
+    await session.commit()
+    return {"ok": True}
+    return {"ok": True}
+
+@app.get("/api/shopping-lists")
+async def get_shopping_lists(username: str = Depends(get_current_user_token), session: AsyncSession = Depends(get_db)):
+    """Get user's shopping lists"""
+    res = await session.execute(select(User).where(User.username == username))
+    u = res.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    
+    lists_res = await session.execute(
+        select(ShoppingList)
+        .where((ShoppingList.user_id == u.id) & (ShoppingList.is_archived == False))
+        .order_by(desc(ShoppingList.created_at))
+    )
+    lists = lists_res.scalars().all()
+    
+    return {
+        "lists": [
+            {
+                "id": l.id,
+                "title": l.title,
+                "items_json": l.items_json,
+                "created_at": str(l.created_at)
+            }
+            for l in lists
+        ]
+    }
+
+@app.post("/api/shopping-lists")
+async def create_shopping_list(payload: ShoppingListPayload, username: str = Depends(get_current_user_token), session: AsyncSession = Depends(get_db)):
+    """Create a new shopping list"""
+    res = await session.execute(select(User).where(User.username == username))
+    u = res.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    
+    new_list = ShoppingList(
+        user_id=u.id,
+        title=payload.title,
+        items_json=payload.items_json
+    )
+    session.add(new_list)
+    await session.commit()
+    await session.refresh(new_list)
+    
+    return {"ok": True, "id": new_list.id}
+
+@app.delete("/api/shopping-lists/{list_id}")
+async def archive_shopping_list(list_id: int, username: str = Depends(get_current_user_token), session: AsyncSession = Depends(get_db)):
+    """Archive (soft delete) a shopping list"""
+    res = await session.execute(select(User).where(User.username == username))
+    u = res.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    
+    lst = await session.get(ShoppingList, list_id)
+    if not lst:
+        raise HTTPException(status_code=404, detail="List not found")
+        
+    if lst.user_id != u.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+        
+    lst.is_archived = True
+    session.add(lst)
+    await session.commit()
+    return {"ok": True}
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint that groups connections by room_id"""

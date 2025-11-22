@@ -7,6 +7,7 @@ import '../providers/auth_provider.dart';
 import '../themes/colors.dart';
 import '../widgets/frosted_glass_button.dart';
 import '../widgets/frosted_glass_textfield.dart';
+import 'inventory_page.dart';
 
 class HomePage extends StatefulWidget {
   @override

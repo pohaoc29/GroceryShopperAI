@@ -6,6 +6,7 @@ import '../themes/colors.dart';
 import 'chat_detail_page.dart';
 import 'contacts_page.dart';
 import 'profile_page.dart';
+import 'inventory_page.dart';
 import 'package:provider/provider.dart';
 
 class WebShell extends StatefulWidget {
@@ -79,16 +80,22 @@ class _WebShellState extends State<WebShell> {
             onPressed: () => setState(() => _currentTab = 0),
           ),
           _buildNavButton(
-            icon: Icons.people,
-            label: 'Contacts',
+            icon: Icons.inventory_2_outlined,
+            label: 'Inventory',
             isActive: _currentTab == 1,
             onPressed: () => setState(() => _currentTab = 1),
           ),
           _buildNavButton(
-            icon: Icons.person,
-            label: 'Profile',
+            icon: Icons.people,
+            label: 'Contacts',
             isActive: _currentTab == 2,
             onPressed: () => setState(() => _currentTab = 2),
+          ),
+          _buildNavButton(
+            icon: Icons.person,
+            label: 'Profile',
+            isActive: _currentTab == 3,
+            onPressed: () => setState(() => _currentTab = 3),
           ),
           SizedBox(width: 16),
         ],
@@ -96,8 +103,10 @@ class _WebShellState extends State<WebShell> {
       body: _currentTab == 0
           ? _buildChatLayout(isDark)
           : _currentTab == 1
-              ? ContactsPage()
-              : ProfilePage(),
+              ? InventoryPage()
+              : _currentTab == 2
+                  ? ContactsPage()
+                  : ProfilePage(),
     );
   }
 
