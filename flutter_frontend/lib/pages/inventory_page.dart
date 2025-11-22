@@ -1,0 +1,381 @@
+import 'package:flutter/material.dart';
+import 'dart:convert';
+import '../services/api_client.dart';
+import '../themes/colors.dart';
+
+class InventoryPage extends StatefulWidget {
+  @override
+  _InventoryPageState createState() => _InventoryPageState();
+}
+
+class _InventoryPageState extends State<InventoryPage> {
+  List<dynamic> _items = [];
+  List<dynamic> _shoppingLists = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+    try {
+      final items = await apiClient.getInventory();
+      final lists = await apiClient.getShoppingLists();
+      setState(() {
+        _items = items;
+        _shoppingLists = lists;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load data: $e')),
+      );
+    }
+  }
+
+  Future<void> _loadInventory() async {
+    await _loadData();
+  }
+
+  Future<void> _showEditDialog({Map<String, dynamic>? item}) async {
+    final nameController = TextEditingController(text: item?['product_name'] ?? '');
+    final stockController = TextEditingController(text: item?['stock']?.toString() ?? '0');
+    final safetyController = TextEditingController(text: item?['safety_stock_level']?.toString() ?? '0');
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(item == null ? 'Add Item' : 'Edit Item'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: InputDecoration(labelText: 'Product Name'),
+              enabled: item == null, // Name is unique key in backend logic for now
+            ),
+            TextField(
+              controller: stockController,
+              decoration: InputDecoration(labelText: 'Stock'),
+              keyboardType: TextInputType.number,
+            ),
+            TextField(
+              controller: safetyController,
+              decoration: InputDecoration(labelText: 'Safety Stock Level'),
+              keyboardType: TextInputType.number,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              try {
+                await apiClient.upsertInventoryItem(
+                  nameController.text,
+                  int.parse(stockController.text),
+                  int.parse(safetyController.text),
+                );
+                Navigator.pop(context);
+                _loadInventory();
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Error: $e')),
+                );
+              }
+            },
+            child: Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteItem(int id) async {
+    try {
+      await apiClient.deleteInventoryItem(id);
+      _loadInventory();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to delete: $e')),
+      );
+    }
+  }
+
+  Future<void> _archiveList(int id) async {
+    try {
+      await apiClient.archiveShoppingList(id);
+      _loadData();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to archive list: $e')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Scaffold(
+      appBar: PreferredSize(
+        preferredSize: Size.fromHeight(kToolbarHeight),
+        child: ClipRect(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  isDark
+                      ? Colors.black.withOpacity(0.3)
+                      : Colors.black.withOpacity(0.15),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+            child: AppBar(
+              backgroundColor: Colors.transparent,
+              title: Text(
+                'Inventory',
+                style: TextStyle(
+                  fontFamily: 'Boska',
+                  fontSize: 28,
+                  fontWeight: FontWeight.w700,
+                  color: Theme.of(context).appBarTheme.titleTextStyle?.color,
+                ),
+              ),
+              centerTitle: true,
+              elevation: 0,
+            ),
+          ),
+        ),
+      ),
+      body: _isLoading
+          ? Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _loadData,
+              child: ListView(
+                padding: EdgeInsets.all(16),
+                children: [
+                  // Shopping Lists Section
+                  if (_shoppingLists.isNotEmpty) ...[
+                    Text(
+                      'Shopping Lists',
+                      style: TextStyle(
+                        fontFamily: 'Boska',
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : kTextDark,
+                      ),
+                    ),
+                    SizedBox(height: 12),
+                    ..._shoppingLists.map((list) => _buildShoppingListCard(context, list, isDark)),
+                    SizedBox(height: 24),
+                  ],
+
+                  // Inventory Section
+                  Text(
+                    'My Inventory',
+                    style: TextStyle(
+                      fontFamily: 'Boska',
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : kTextDark,
+                    ),
+                  ),
+                  SizedBox(height: 12),
+                  if (_items.isEmpty)
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(32.0),
+                        child: Text(
+                          'No items in inventory',
+                          style: TextStyle(
+                            color: kTextGray,
+                            fontFamily: 'Satoshi',
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    ..._items.map((item) => _buildInventoryItemCard(context, item, isDark)),
+                ],
+              ),
+            ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showEditDialog(),
+        child: Icon(Icons.add),
+        backgroundColor: isDark ? Colors.cyan : kPrimary,
+        elevation: 4,
+      ),
+    );
+  }
+
+  Widget _buildShoppingListCard(BuildContext context, dynamic list, bool isDark) {
+    // Parse items JSON
+    List<dynamic> items = [];
+    try {
+      items = jsonDecode(list['items_json']);
+    } catch (_) {}
+
+    return Container(
+      margin: EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.indigo.withOpacity(0.2) : Colors.blue.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark ? Colors.indigo.withOpacity(0.3) : Colors.blue.withOpacity(0.2),
+        ),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          leading: Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: isDark ? Colors.indigo.withOpacity(0.3) : Colors.blue.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              Icons.shopping_cart_outlined,
+              color: isDark ? Colors.indigo[200] : Colors.blue[700],
+            ),
+          ),
+          title: Text(
+            list['title'],
+            style: TextStyle(
+              fontFamily: 'Satoshi',
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+          subtitle: Text(
+            '${items.length} items • ${list['created_at'].substring(0, 10)}',
+            style: TextStyle(
+              fontFamily: 'Satoshi',
+              color: kTextGray,
+              fontSize: 12,
+            ),
+          ),
+          children: [
+            ...items.map((item) => ListTile(
+              dense: true,
+              title: Text(item['name'] ?? ''),
+              subtitle: Text('${item['quantity']} - ${item['notes'] ?? ''}'),
+              leading: Icon(Icons.check_circle_outline, size: 16, color: kTextGray),
+            )),
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: TextButton.icon(
+                onPressed: () => _archiveList(list['id']),
+                icon: Icon(Icons.archive_outlined, size: 18),
+                label: Text('Archive List'),
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInventoryItemCard(BuildContext context, dynamic item, bool isDark) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.grey[800]!.withOpacity(0.5)
+            : Colors.white.withOpacity(0.8),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withOpacity(0.1)
+              : Colors.grey.withOpacity(0.2),
+        ),
+      ),
+      child: ListTile(
+        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.cyan.withOpacity(0.2)
+                : kPrimary.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(
+            Icons.inventory_2_outlined,
+            color: isDark ? Colors.cyan : kPrimary,
+          ),
+        ),
+        title: Text(
+          item['product_name'],
+          style: TextStyle(
+            fontFamily: 'Satoshi',
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4.0),
+          child: Row(
+            children: [
+              _buildBadge(
+                context,
+                'Stock: ${item['stock']}',
+                item['stock'] < item['safety_stock_level']
+                    ? Colors.red
+                    : Colors.green,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Safety: ${item['safety_stock_level']}',
+                style: TextStyle(
+                  fontFamily: 'Satoshi',
+                  color: kTextGray,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+        trailing: IconButton(
+          icon: Icon(Icons.delete_outline, color: Colors.red[300]),
+          onPressed: () => _deleteItem(item['product_id']),
+        ),
+        onTap: () => _showEditDialog(item: item),
+      ),
+    );
+  }
+
+  Widget _buildBadge(BuildContext context, String text, Color color) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          fontFamily: 'Satoshi',
+        ),
+      ),
+    );
+  }
+}

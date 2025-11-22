@@ -75,6 +75,18 @@ class Inventory(Base):
 
     owner = relationship("User", backref="inventory_items")
 
+class ShoppingList(Base):
+    __tablename__ = "shopping_lists"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    title = Column(String(255), nullable=False)
+    items_json = Column(Text, nullable=False) # Store items as JSON string
+    is_archived = Column(Boolean, default=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    owner = relationship("User", backref="shopping_lists")
+
 engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 

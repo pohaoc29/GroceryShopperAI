@@ -1,7 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:web_socket_channel/web_socket_channel.dart';
+import '../models/ai_event.dart';
 import 'storage_service.dart';
 
 const bool useAndroidEmulator = false;
@@ -206,6 +209,93 @@ class ApiClient {
     print(
         '[ApiClient] Calling generateAISuggestion for room $roomId with goal: $goal');
     return await post('/rooms/$roomId/ai-matching', body);
+  }
+
+  // Inventory Management
+  Future<List<dynamic>> getInventory() async {
+    final res = await get('/inventory');
+    return res['items'] as List<dynamic>;
+  }
+
+  Future<void> upsertInventoryItem(String name, int stock, int safetyStock) async {
+    await post('/inventory', {
+      'product_name': name,
+      'stock': stock,
+      'safety_stock_level': safetyStock,
+    });
+  }
+
+  Future<void> deleteInventoryItem(int productId) async {
+    await delete('/inventory/$productId');
+  }
+
+  // Shopping List Management
+  Future<List<dynamic>> getShoppingLists() async {
+    final res = await get('/shopping-lists');
+    return res['lists'] as List<dynamic>;
+  }
+
+  Future<void> createShoppingList(String title, String itemsJson) async {
+    await post('/shopping-lists', {
+      'title': title,
+      'items_json': itemsJson,
+    });
+  }
+
+  Future<void> archiveShoppingList(int listId) async {
+    await delete('/shopping-lists/$listId');
+  }
+
+  // WebSocket Management
+  WebSocketChannel? _channel;
+  final _aiEventController = StreamController<AIEvent>.broadcast();
+  final _messageController = StreamController<Map<String, dynamic>>.broadcast();
+  
+  Stream<AIEvent> get aiEventStream => _aiEventController.stream;
+  Stream<Map<String, dynamic>> get messageStream => _messageController.stream;
+
+  void connectWebSocket(int roomId) {
+    disconnectWebSocket(); // Ensure no existing connection
+
+    final url = '$wsUrl?room_id=$roomId';
+    print('[ApiClient] Connecting to WebSocket: $url');
+    
+    try {
+      _channel = WebSocketChannel.connect(Uri.parse(url));
+      
+      _channel!.stream.listen(
+        (message) {
+          print('[ApiClient] WS Message: $message');
+          try {
+            final data = jsonDecode(message);
+            if (data['type'] == 'ai_event') {
+              final event = AIEvent.fromJson(data);
+              _aiEventController.add(event);
+            } else if (data['type'] == 'message') {
+              _messageController.add(data['message']);
+            }
+          } catch (e) {
+            print('[ApiClient] WS Parse Error: $e');
+          }
+        },
+        onError: (error) {
+          print('[ApiClient] WS Error: $error');
+        },
+        onDone: () {
+          print('[ApiClient] WS Closed');
+        },
+      );
+    } catch (e) {
+      print('[ApiClient] WS Connection Error: $e');
+    }
+  }
+
+  void disconnectWebSocket() {
+    if (_channel != null) {
+      print('[ApiClient] Disconnecting WebSocket');
+      _channel!.sink.close();
+      _channel = null;
+    }
   }
 }
 
