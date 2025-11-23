@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'home_page.dart';
+import 'inventory_page.dart';
 import 'contacts_page.dart';
 import 'profile_page.dart';
 
@@ -53,6 +54,7 @@ class _MainShellState extends State<MainShell> {
             },
             children: [
               HomePage(),
+              InventoryPage(),
               ContactsPage(),
               ProfilePage(),
             ],
@@ -67,7 +69,7 @@ class _MainShellState extends State<MainShell> {
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 20.0, sigmaY: 20.0),
                   child: Container(
-                    width: 200,
+                    width: 280,
                     height: 60,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -104,16 +106,22 @@ class _MainShellState extends State<MainShell> {
                             onPressed: () => _onNavbarPressed(0),
                           ),
                           _buildNavButton(
-                            icon: Icons.people,
-                            label: 'Contacts',
+                            icon: Icons.inventory_2_outlined,
+                            label: 'Inventory',
                             isActive: _currentIndex == 1,
                             onPressed: () => _onNavbarPressed(1),
                           ),
                           _buildNavButton(
-                            icon: Icons.person,
-                            label: 'Profile',
+                            icon: Icons.people,
+                            label: 'Contacts',
                             isActive: _currentIndex == 2,
                             onPressed: () => _onNavbarPressed(2),
+                          ),
+                          _buildNavButton(
+                            icon: Icons.person,
+                            label: 'Profile',
+                            isActive: _currentIndex == 3,
+                            onPressed: () => _onNavbarPressed(3),
                           ),
                         ],
                       ),

@@ -32,11 +32,20 @@ class AIEvent {
   bool get isInventoryEvent => eventType == 'inventory_analysis';
 
   /// Check if this event is a menu-related event
-  bool get isMenuEvent => eventType == 'menu';
+  bool get isMenuEvent => eventType == 'menu_suggestions';
 
   /// Check if this event is a restock-related event
   bool get isRestockEvent => eventType == 'restock_plan';
 
   /// Check if this event is a procurement plan
   bool get isProcurementEvent => eventType == 'procurement_plan';
+
+  // Helpers for payload access
+  List<dynamic> get lowStockItems => payload['low_stock'] ?? [];
+  List<dynamic> get healthyItems => payload['healthy'] ?? [];
+  List<dynamic> get dishes => payload['dishes'] ?? [];
+  List<dynamic> get restockItems => payload['items'] ?? [];
+  List<dynamic> get procurementItems => payload['items'] ?? [];
+  String get goal => payload['goal'] ?? '';
+  String get summary => payload['summary'] ?? '';
 }

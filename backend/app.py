@@ -1,4 +1,4 @@
-print("🔥 Running backend version: 2025-11-17 15:00")
+print("🔥 Running backend version: 2025-11-20 22:00")
 import os
 import json
 import asyncio
@@ -12,7 +12,7 @@ from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from dotenv import load_dotenv
 
-from db import SessionLocal, init_db, User, Message, Room, RoomMember, Inventory, GroceryItem
+from db import SessionLocal, init_db, User, Message, Room, RoomMember, Inventory, GroceryItem, ShoppingList
 from auth import get_password_hash, verify_password, create_access_token, get_current_user_token
 from websocket_manager import ConnectionManager
 from llm import chat_completion, AVAILABLE_MODELS
@@ -25,7 +25,7 @@ from llm_modules.inventory_analyzer import analyze_inventory
 from llm_modules.menu_generator import generate_menu
 from llm_modules.procurement_planner import generate_restock_plan
 from llm_modules.chat_procurement_planner import generate_procurement_plan
-from llm_modules.recommend_utils import get_relevant_grocery_items
+from vector.recommend_utils import get_relevant_grocery_items
 
 load_dotenv()
 
@@ -65,6 +65,15 @@ class AIPlanPayload(BaseModel):
     
 class AIMatchingPayload(BaseModel):
     goal: Optional[str] = None
+
+class InventoryItemPayload(BaseModel):
+    product_name: str
+    stock: int
+    safety_stock_level: int
+
+class ShoppingListPayload(BaseModel):
+    title: str
+    items_json: str # JSON string of items list
 
 # --------- Dependencies ---------
 async def get_db() -> AsyncSession:
@@ -208,7 +217,7 @@ async def handle_inventory_command(content: str, room_id: int, user_id: int):
 async def handle_gro_command(kind: str, room_id: int, user_id: int):
     """
     kind: "analyze", "menu", restock"
-    Use inventory + grocery catalog (if needed) and LLM modules.
+    Use inventory + grocery catalog (if needed), embeddings, and LLM modules.
     """
     async with SessionLocal() as session:
         # get user model
@@ -228,9 +237,9 @@ async def handle_gro_command(kind: str, room_id: int, user_id: int):
             for m in msgs
         ]
         
-        # Load All grocery items
-        gro_res = await session.execute(select(GroceryItem).limit(1000))
-        all_grocery_items = [
+        # Load Full grocery catalog
+        gro_res = await session.execute(select(GroceryItem))
+        full_catelog = [
             {
                 "title": g.title,
                 "sub_category": g.sub_category,
@@ -254,8 +263,7 @@ async def handle_gro_command(kind: str, room_id: int, user_id: int):
             for row in inv_res.scalars().all()
         ]
 
-
-        # ---- Pre-calc: Low-stock vs healthy ----
+        # ---- Classify - Build low stock + healthy list ----
         low_stock_items = [
             item for item in inventory_items
             if item["stock"] < item["safety_stock_level"]
@@ -265,27 +273,25 @@ async def handle_gro_command(kind: str, room_id: int, user_id: int):
             if item["stock"] >= item["safety_stock_level"]
         ]
         
-        # ---- Pre-calc: relevant grocery catalog ----
-        relevant_items = []
+        # ---- Embedding matching for all low-stock items ----
+        grocery_items = []
         for item in low_stock_items:
-            matches = await get_relevant_grocery_items(session, item["product_name"], limit=30)
-            
-            for g in matches:
-                relevant_items.append({
-                    "title": g.title,
-                    "sub_category": g.sub_category,
-                    "price": float(g.price),
-                    "rating": g.rating_value or 0.0,
+            matches = await get_relevant_grocery_items(session, item["product_name"], limit=5)
+            for m in matches:
+                grocery_items.append({
+                    "title": m.title,
+                    "sub_category": m.sub_category,
+                    "price": float(m.price),
+                    "rating": m.rating_value or 0.0,
                 })
 
         # remove duplicates by title
         seen = set()
-        matched_grocery_items = []
-        for item in relevant_items:
-            key = item["title"]
-            if key not in seen:
-                seen.add(key)
-                matched_grocery_items.append(item)
+        merged = []
+        for g in grocery_items:
+            if g["title"] not in seen:
+                seen.add(g["title"])
+                merged.append(g)
         
         
         # Run AI Module
@@ -294,45 +300,49 @@ async def handle_gro_command(kind: str, room_id: int, user_id: int):
                 inventory_items=inventory_items, 
                 low_stock_items=low_stock_items, 
                 healthy_items=healthy_items, 
-                grocery_items=matched_grocery_items, 
+                grocery_items=merged, 
                 chat_history=chat_history,
                 model_name=model_name,
             )
             event_type = "inventory_analysis"
+            
+        elif kind == "restock":
+            ai_result = await generate_restock_plan(
+                low_stock_items=low_stock_items, 
+                grocery_items=merged, 
+                model_name=model_name
+            )
+            event_type = "restock_plan"
+            
         elif kind == "menu":
             ai_result = await generate_menu(
                 inventory_items=inventory_items, 
-                grocery_items=all_grocery_items,
+                grocery_items=full_catelog,
                 chat_history=chat_history,
                 model_name=model_name
             )
             event_type = "menu_suggestions"
-        elif kind == "restock":
-            ai_result = await generate_restock_plan(
-                low_stock_items=low_stock_items, 
-                grocery_items=matched_grocery_items, 
-                model_name=model_name
-            )
-            event_type = "restock_plan"
+
         else:
             ai_result = {"narrative": "Unknown command.", "data": {}}
             event_type = "unknown"
             
         narrative = ai_result.get("narrative", "AI suggestion generated.")
+        
         await broadcast_ai_event(room_id, event_type, narrative, ai_result)
         
         # Send a short chat message as well
         msg_text_map = {
             "inventory_analysis": "Generated inventory analysis for your current stock.",
-            "menu_suggestions": "Generated menu suggestions based on your inventory.",
+            "menu_suggestions": "Generated menu suggestions based on your inventory and items from grocery store.",
             "restock_plan": "Generated a suggested restock plan.",
         }
-        chat_text = msg_text_map.get(event_type, "Generated AI suggestion.")
+        bot_msg_text = msg_text_map.get(event_type, "AI suggestion generated.")
         
         bot_msg = Message(
             room_id=room_id,
             user_id=None,
-            content=chat_text,
+            content=bot_msg_text,
             is_bot=True,
         )
         session.add(bot_msg)
@@ -794,6 +804,148 @@ async def update_llm_model(payload: dict, username: str = Depends(get_current_us
     
     return {"ok": True, "model": model_name}
 
+@app.get("/api/inventory")
+async def get_inventory(username: str = Depends(get_current_user_token), session: AsyncSession = Depends(get_db)):
+    """Get user's inventory"""
+    res = await session.execute(select(User).where(User.username == username))
+    u = res.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    
+    inv_res = await session.execute(
+        select(Inventory).where(Inventory.user_id == u.id).order_by(Inventory.product_name)
+    )
+    items = inv_res.scalars().all()
+    
+    return {
+        "items": [
+            {
+                "product_id": item.product_id,
+                "product_name": item.product_name,
+                "stock": item.stock,
+                "safety_stock_level": item.safety_stock_level
+            }
+            for item in items
+        ]
+    }
+
+@app.post("/api/inventory")
+async def upsert_inventory_item(payload: InventoryItemPayload, username: str = Depends(get_current_user_token), session: AsyncSession = Depends(get_db)):
+    """Add or update an inventory item"""
+    res = await session.execute(select(User).where(User.username == username))
+    u = res.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    
+    # Check if item exists
+    existing_res = await session.execute(
+        select(Inventory).where(
+            (Inventory.user_id == u.id) & (Inventory.product_name == payload.product_name)
+        )
+    )
+    existing = existing_res.scalar_one_or_none()
+    
+    if existing:
+        existing.stock = payload.stock
+        existing.safety_stock_level = payload.safety_stock_level
+        session.add(existing)
+    else:
+        new_item = Inventory(
+            user_id=u.id,
+            product_name=payload.product_name,
+            stock=payload.stock,
+            safety_stock_level=payload.safety_stock_level
+        )
+        session.add(new_item)
+    
+    await session.commit()
+    return {"ok": True}
+
+@app.delete("/api/inventory/{product_id}")
+async def delete_inventory_item(product_id: int, username: str = Depends(get_current_user_token), session: AsyncSession = Depends(get_db)):
+    """Delete an inventory item"""
+    res = await session.execute(select(User).where(User.username == username))
+    u = res.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    
+    item = await session.get(Inventory, product_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+        
+    if item.user_id != u.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+        
+    await session.delete(item)
+    await session.commit()
+    return {"ok": True}
+    return {"ok": True}
+
+@app.get("/api/shopping-lists")
+async def get_shopping_lists(username: str = Depends(get_current_user_token), session: AsyncSession = Depends(get_db)):
+    """Get user's shopping lists"""
+    res = await session.execute(select(User).where(User.username == username))
+    u = res.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    
+    lists_res = await session.execute(
+        select(ShoppingList)
+        .where((ShoppingList.user_id == u.id) & (ShoppingList.is_archived == False))
+        .order_by(desc(ShoppingList.created_at))
+    )
+    lists = lists_res.scalars().all()
+    
+    return {
+        "lists": [
+            {
+                "id": l.id,
+                "title": l.title,
+                "items_json": l.items_json,
+                "created_at": str(l.created_at)
+            }
+            for l in lists
+        ]
+    }
+
+@app.post("/api/shopping-lists")
+async def create_shopping_list(payload: ShoppingListPayload, username: str = Depends(get_current_user_token), session: AsyncSession = Depends(get_db)):
+    """Create a new shopping list"""
+    res = await session.execute(select(User).where(User.username == username))
+    u = res.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    
+    new_list = ShoppingList(
+        user_id=u.id,
+        title=payload.title,
+        items_json=payload.items_json
+    )
+    session.add(new_list)
+    await session.commit()
+    await session.refresh(new_list)
+    
+    return {"ok": True, "id": new_list.id}
+
+@app.delete("/api/shopping-lists/{list_id}")
+async def archive_shopping_list(list_id: int, username: str = Depends(get_current_user_token), session: AsyncSession = Depends(get_db)):
+    """Archive (soft delete) a shopping list"""
+    res = await session.execute(select(User).where(User.username == username))
+    u = res.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    
+    lst = await session.get(ShoppingList, list_id)
+    if not lst:
+        raise HTTPException(status_code=404, detail="List not found")
+        
+    if lst.user_id != u.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+        
+    lst.is_archived = True
+    session.add(lst)
+    await session.commit()
+    return {"ok": True}
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint that groups connections by room_id"""
