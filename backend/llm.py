@@ -1,6 +1,7 @@
 import os
 import httpx
 import google.generativeai as genai
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -105,3 +106,12 @@ async def chat_completion(messages, temperature: float = 0.2, max_tokens: int = 
     else:
         # If reached here, unsupported provider
         raise ValueError(f"Unsupported provider: {provider}")
+
+
+async def get_embedding(text, model="text-embedding-3-large"):
+    client = AsyncOpenAI()
+    res = await client.embeddings.create(
+        model=model,
+        input=text,
+    )
+    return res.data[0].embedding

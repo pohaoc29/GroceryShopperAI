@@ -1,34 +1,61 @@
-# Use an official lightweight Python image as the base
+# ---------------------------------------------------------
+# Base Image
+# ---------------------------------------------------------
 FROM python:3.11-slim
 
-# Set the working directory inside the container
+# ---------------------------------------------------------
+# Install system deps
+# ---------------------------------------------------------
+RUN apt-get update && apt-get install -y \
+    gcc \
+    libpq-dev \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---------------------------------------------------------
+# Install Google Cloud SDK (provides gsutil)
+# ---------------------------------------------------------
+RUN curl -sSL https://sdk.cloud.google.com | bash
+ENV PATH="/root/google-cloud-sdk/bin:${PATH}"
+
+# ---------------------------------------------------------
+# Workdir
+# ---------------------------------------------------------
 WORKDIR /app
 
-# Install system dependencies required for building some Python packages (e.g., asyncmy, psycopg2)
-RUN apt-get update && apt-get install -y gcc libpq-dev && rm -rf /var/lib/apt/lists/*
-
 # ---------------------------------------------------------
-# 1. Copy ONLY requirements.txt at repo root
+# Copy requirements only, install deps
 # ---------------------------------------------------------
 COPY requirements.txt /app/requirements.txt
-
-# Install Python dependencies
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # ---------------------------------------------------------
-# 2. Copy ONLY backend/ directory into /app/backend
+# Copy backend folder
 # ---------------------------------------------------------
 COPY backend /app/backend
 
-# Set the working directory to your backend folder
 WORKDIR /app/backend
 
-# Expose port 8080 (This is informational; Cloud Run uses the $PORT env var)
+# ---------------------------------------------------------
+# Create entrypoint.sh (download embeddings → run backend)
+# ---------------------------------------------------------
+RUN echo '#!/bin/bash\n\
+set -e\n\
+echo "[ENTRYPOINT] Downloading embeddings.sqlite from GCS..."\n\
+gsutil cp gs://groceryshopperai-embeddings/embeddings.sqlite /tmp/embeddings.sqlite || echo "[WARN] Could not download embeddings.sqlite"\n\
+echo "[ENTRYPOINT] Starting FastAPI..."\n\
+exec uvicorn app:app --host 0.0.0.0 --port ${PORT:-8080}\n' \
+> /app/backend/entrypoint.sh
+
+RUN chmod +x /app/backend/entrypoint.sh
+
+# ---------------------------------------------------------
+# Cloud Run expects container to listen on $PORT
+# ---------------------------------------------------------
 EXPOSE 8080
 
-# --- Use $PORT and Shell Form ---
-# 1. Use the shell form (a single string) instead of the exec form (JSON array).
-#    This is required for the shell to interpret the $PORT environment variable.
-# 2. Bind Uvicorn to the $PORT provided by Cloud Run, not a hardcoded '8080'.
-# 3. Bind to 0.0.0.0 to accept connections from any IP (required by Cloud Run).
-CMD exec uvicorn app:app --host 0.0.0.0 --port $PORT
+# ---------------------------------------------------------
+# Use entrypoint.sh instead of direct uvicorn
+# ---------------------------------------------------------
+ENTRYPOINT ["/app/backend/entrypoint.sh"]
