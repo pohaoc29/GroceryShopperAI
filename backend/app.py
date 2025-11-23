@@ -1,4 +1,4 @@
-print("🔥 Running backend version: 2025-11-17 15:00")
+print("🔥 Running backend version: 2025-11-20 22:00")
 import os
 import json
 import asyncio
@@ -25,7 +25,7 @@ from llm_modules.inventory_analyzer import analyze_inventory
 from llm_modules.menu_generator import generate_menu
 from llm_modules.procurement_planner import generate_restock_plan
 from llm_modules.chat_procurement_planner import generate_procurement_plan
-from llm_modules.recommend_utils import get_relevant_grocery_items
+from vector.recommend_utils import get_relevant_grocery_items
 
 load_dotenv()
 
@@ -217,7 +217,7 @@ async def handle_inventory_command(content: str, room_id: int, user_id: int):
 async def handle_gro_command(kind: str, room_id: int, user_id: int):
     """
     kind: "analyze", "menu", restock"
-    Use inventory + grocery catalog (if needed) and LLM modules.
+    Use inventory + grocery catalog (if needed), embeddings, and LLM modules.
     """
     async with SessionLocal() as session:
         # get user model
@@ -237,9 +237,9 @@ async def handle_gro_command(kind: str, room_id: int, user_id: int):
             for m in msgs
         ]
         
-        # Load All grocery items
-        gro_res = await session.execute(select(GroceryItem).limit(1000))
-        all_grocery_items = [
+        # Load Full grocery catalog
+        gro_res = await session.execute(select(GroceryItem))
+        full_catelog = [
             {
                 "title": g.title,
                 "sub_category": g.sub_category,
@@ -263,8 +263,7 @@ async def handle_gro_command(kind: str, room_id: int, user_id: int):
             for row in inv_res.scalars().all()
         ]
 
-
-        # ---- Pre-calc: Low-stock vs healthy ----
+        # ---- Classify - Build low stock + healthy list ----
         low_stock_items = [
             item for item in inventory_items
             if item["stock"] < item["safety_stock_level"]
@@ -274,27 +273,25 @@ async def handle_gro_command(kind: str, room_id: int, user_id: int):
             if item["stock"] >= item["safety_stock_level"]
         ]
         
-        # ---- Pre-calc: relevant grocery catalog ----
-        relevant_items = []
+        # ---- Embedding matching for all low-stock items ----
+        grocery_items = []
         for item in low_stock_items:
-            matches = await get_relevant_grocery_items(session, item["product_name"], limit=30)
-            
-            for g in matches:
-                relevant_items.append({
-                    "title": g.title,
-                    "sub_category": g.sub_category,
-                    "price": float(g.price),
-                    "rating": g.rating_value or 0.0,
+            matches = await get_relevant_grocery_items(session, item["product_name"], limit=5)
+            for m in matches:
+                grocery_items.append({
+                    "title": m.title,
+                    "sub_category": m.sub_category,
+                    "price": float(m.price),
+                    "rating": m.rating_value or 0.0,
                 })
 
         # remove duplicates by title
         seen = set()
-        matched_grocery_items = []
-        for item in relevant_items:
-            key = item["title"]
-            if key not in seen:
-                seen.add(key)
-                matched_grocery_items.append(item)
+        merged = []
+        for g in grocery_items:
+            if g["title"] not in seen:
+                seen.add(g["title"])
+                merged.append(g)
         
         
         # Run AI Module
@@ -303,45 +300,49 @@ async def handle_gro_command(kind: str, room_id: int, user_id: int):
                 inventory_items=inventory_items, 
                 low_stock_items=low_stock_items, 
                 healthy_items=healthy_items, 
-                grocery_items=matched_grocery_items, 
+                grocery_items=merged, 
                 chat_history=chat_history,
                 model_name=model_name,
             )
             event_type = "inventory_analysis"
+            
+        elif kind == "restock":
+            ai_result = await generate_restock_plan(
+                low_stock_items=low_stock_items, 
+                grocery_items=merged, 
+                model_name=model_name
+            )
+            event_type = "restock_plan"
+            
         elif kind == "menu":
             ai_result = await generate_menu(
                 inventory_items=inventory_items, 
-                grocery_items=all_grocery_items,
+                grocery_items=full_catelog,
                 chat_history=chat_history,
                 model_name=model_name
             )
             event_type = "menu_suggestions"
-        elif kind == "restock":
-            ai_result = await generate_restock_plan(
-                low_stock_items=low_stock_items, 
-                grocery_items=matched_grocery_items, 
-                model_name=model_name
-            )
-            event_type = "restock_plan"
+
         else:
             ai_result = {"narrative": "Unknown command.", "data": {}}
             event_type = "unknown"
             
         narrative = ai_result.get("narrative", "AI suggestion generated.")
+        
         await broadcast_ai_event(room_id, event_type, narrative, ai_result)
         
         # Send a short chat message as well
         msg_text_map = {
             "inventory_analysis": "Generated inventory analysis for your current stock.",
-            "menu_suggestions": "Generated menu suggestions based on your inventory.",
+            "menu_suggestions": "Generated menu suggestions based on your inventory and items from grocery store.",
             "restock_plan": "Generated a suggested restock plan.",
         }
-        chat_text = msg_text_map.get(event_type, "Generated AI suggestion.")
+        bot_msg_text = msg_text_map.get(event_type, "AI suggestion generated.")
         
         bot_msg = Message(
             room_id=room_id,
             user_id=None,
-            content=chat_text,
+            content=bot_msg_text,
             is_bot=True,
         )
         session.add(bot_msg)
