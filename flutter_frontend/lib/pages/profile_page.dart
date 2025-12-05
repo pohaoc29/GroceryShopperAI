@@ -237,7 +237,8 @@ class _ProfilePageState extends State<ProfilePage> {
                   child: Container(
                     width: maxWidth,
                     child: SingleChildScrollView(
-                      padding: EdgeInsets.all(20),
+                      padding: EdgeInsets.only(
+                          left: 20, right: 20, top: 20, bottom: 100),
                       child: Column(
                         children: [
                           // Avatar with Edit Button

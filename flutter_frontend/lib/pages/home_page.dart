@@ -455,6 +455,7 @@ class _HomePageState extends State<HomePage> {
                                           ),
                                         )
                                       : ListView(
+                                          padding: EdgeInsets.only(bottom: 100),
                                           children: [
                                             if (pinnedRooms.isNotEmpty) ...[
                                               Padding(

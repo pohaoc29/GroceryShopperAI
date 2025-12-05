@@ -116,6 +116,7 @@ class _ContactsPageState extends State<ContactsPage> {
             child: Container(
               width: maxWidth,
               child: ListView.builder(
+                padding: EdgeInsets.only(bottom: 100),
                 itemCount: contacts.length,
                 itemBuilder: (context, index) {
                   final username = contacts[index];

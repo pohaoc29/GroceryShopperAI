@@ -42,9 +42,12 @@ class _InventoryPageState extends State<InventoryPage> {
   }
 
   Future<void> _showEditDialog({Map<String, dynamic>? item}) async {
-    final nameController = TextEditingController(text: item?['product_name'] ?? '');
-    final stockController = TextEditingController(text: item?['stock']?.toString() ?? '0');
-    final safetyController = TextEditingController(text: item?['safety_stock_level']?.toString() ?? '0');
+    final nameController =
+        TextEditingController(text: item?['product_name'] ?? '');
+    final stockController =
+        TextEditingController(text: item?['stock']?.toString() ?? '0');
+    final safetyController = TextEditingController(
+        text: item?['safety_stock_level']?.toString() ?? '0');
 
     await showDialog(
       context: context,
@@ -56,7 +59,8 @@ class _InventoryPageState extends State<InventoryPage> {
             TextField(
               controller: nameController,
               decoration: InputDecoration(labelText: 'Product Name'),
-              enabled: item == null, // Name is unique key in backend logic for now
+              enabled:
+                  item == null, // Name is unique key in backend logic for now
             ),
             TextField(
               controller: stockController,
@@ -154,6 +158,13 @@ class _InventoryPageState extends State<InventoryPage> {
               ),
               centerTitle: true,
               elevation: 0,
+              actions: [
+                IconButton(
+                  icon: Icon(Icons.add),
+                  onPressed: () => _showEditDialog(),
+                ),
+                SizedBox(width: 8),
+              ],
             ),
           ),
         ),
@@ -163,7 +174,8 @@ class _InventoryPageState extends State<InventoryPage> {
           : RefreshIndicator(
               onRefresh: _loadData,
               child: ListView(
-                padding: EdgeInsets.all(16),
+                padding:
+                    EdgeInsets.only(bottom: 100, left: 16, right: 16, top: 16),
                 children: [
                   // Shopping Lists Section
                   if (_shoppingLists.isNotEmpty) ...[
@@ -177,7 +189,8 @@ class _InventoryPageState extends State<InventoryPage> {
                       ),
                     ),
                     SizedBox(height: 12),
-                    ..._shoppingLists.map((list) => _buildShoppingListCard(context, list, isDark)),
+                    ..._shoppingLists.map((list) =>
+                        _buildShoppingListCard(context, list, isDark)),
                     SizedBox(height: 24),
                   ],
 
@@ -206,20 +219,16 @@ class _InventoryPageState extends State<InventoryPage> {
                       ),
                     )
                   else
-                    ..._items.map((item) => _buildInventoryItemCard(context, item, isDark)),
+                    ..._items.map((item) =>
+                        _buildInventoryItemCard(context, item, isDark)),
                 ],
               ),
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showEditDialog(),
-        child: Icon(Icons.add),
-        backgroundColor: isDark ? Colors.cyan : kPrimary,
-        elevation: 4,
-      ),
     );
   }
 
-  Widget _buildShoppingListCard(BuildContext context, dynamic list, bool isDark) {
+  Widget _buildShoppingListCard(
+      BuildContext context, dynamic list, bool isDark) {
     // Parse items JSON
     List<dynamic> items = [];
     try {
@@ -229,10 +238,14 @@ class _InventoryPageState extends State<InventoryPage> {
     return Container(
       margin: EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: isDark ? Colors.indigo.withOpacity(0.2) : Colors.blue.withOpacity(0.05),
+        color: isDark
+            ? Colors.indigo.withOpacity(0.2)
+            : Colors.blue.withOpacity(0.05),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isDark ? Colors.indigo.withOpacity(0.3) : Colors.blue.withOpacity(0.2),
+          color: isDark
+              ? Colors.indigo.withOpacity(0.3)
+              : Colors.blue.withOpacity(0.2),
         ),
       ),
       child: Theme(
@@ -242,7 +255,9 @@ class _InventoryPageState extends State<InventoryPage> {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: isDark ? Colors.indigo.withOpacity(0.3) : Colors.blue.withOpacity(0.1),
+              color: isDark
+                  ? Colors.indigo.withOpacity(0.3)
+                  : Colors.blue.withOpacity(0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
@@ -268,11 +283,13 @@ class _InventoryPageState extends State<InventoryPage> {
           ),
           children: [
             ...items.map((item) => ListTile(
-              dense: true,
-              title: Text(item['name'] ?? ''),
-              subtitle: Text('${item['quantity']} - ${item['notes'] ?? ''}'),
-              leading: Icon(Icons.check_circle_outline, size: 16, color: kTextGray),
-            )),
+                  dense: true,
+                  title: Text(item['name'] ?? ''),
+                  subtitle:
+                      Text('${item['quantity']} - ${item['notes'] ?? ''}'),
+                  leading: Icon(Icons.check_circle_outline,
+                      size: 16, color: kTextGray),
+                )),
             Padding(
               padding: const EdgeInsets.all(8.0),
               child: TextButton.icon(
@@ -288,7 +305,8 @@ class _InventoryPageState extends State<InventoryPage> {
     );
   }
 
-  Widget _buildInventoryItemCard(BuildContext context, dynamic item, bool isDark) {
+  Widget _buildInventoryItemCard(
+      BuildContext context, dynamic item, bool isDark) {
     return Container(
       margin: EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
