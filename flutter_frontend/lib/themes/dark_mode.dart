@@ -26,6 +26,10 @@ ThemeData darkTheme = ThemeData(
       fontFamily: 'Boska',
     ),
   ),
+  snackBarTheme: SnackBarThemeData(
+    behavior: SnackBarBehavior.floating,
+    insetPadding: EdgeInsets.only(bottom: 100, left: 16, right: 16),
+  ),
   textTheme: TextTheme(
     displayLarge: TextStyle(
       fontSize: 28,
