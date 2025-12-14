@@ -1,4 +1,3 @@
-print("🔥 Running backend version: 2025-11-24 16:00")
 import os
 import json
 import asyncio
@@ -8,7 +7,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import select, desc, update
+from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from dotenv import load_dotenv
 from google.cloud import storage
@@ -104,6 +103,10 @@ class InventoryItemPayload(BaseModel):
 class ShoppingListPayload(BaseModel):
     title: str
     items_json: str # JSON string of items list
+
+class CheckItemPayload(BaseModel):
+    index: int
+    item: dict
 
 # --------- Dependencies ---------
 async def get_db() -> AsyncSession:
@@ -795,15 +798,11 @@ async def post_room_message(room_id: int, payload: MessagePayload, username: str
         if not member:
             raise HTTPException(status_code=403, detail="Not a member of this room")
         
-        # Reactivate room for ALL members (if they had soft-deleted it)
-        # This ensures that if someone sends a message, the room reappears for everyone
-        await session.execute(
-            update(RoomMember)
-            .where(RoomMember.room_id == room_id)
-            .where(RoomMember.deleted_at != None)
-            .values(deleted_at=None)
-        )
-        await session.commit()
+        # If user had deleted this room, reactivate it (undelete)
+        if member.deleted_at is not None:
+            member.deleted_at = None
+            session.add(member)
+            await session.commit()
         
         # Create message
         m = Message(room_id=room_id, user_id=u.id, content=payload.content, is_bot=False)
@@ -1013,121 +1012,85 @@ async def archive_shopping_list(list_id: int, username: str = Depends(get_curren
     session.add(lst)
     await session.commit()
     return {"ok": True}
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint that groups connections by room_id"""
-    # Extract room_id from query parameters
-    room_id_str = websocket.query_params.get("room_id")
-    if not room_id_str:
-        await websocket.close(code=1008, reason="room_id required")
-        return
-    
-    try:
-        room_id = int(room_id_str)
-    except ValueError:
-        await websocket.close(code=1008, reason="room_id must be integer")
-        return
-    
-    try:
-        await manager.connect(websocket, room_id)
-        try:
-            while True:
-                await websocket.receive_text()
-        except Exception as e:
-            print(f"WebSocket error: {e}")
-    finally:
-        manager.disconnect(websocket, room_id)
 
-# Frontend is now served via Flutter (flutter_frontend/)
-# This FastAPI backend only provides REST API and WebSocket endpoints
-# No need to serve static files here
-
-
-# --------- LLM functions ---------
-# Planning
-@app.post("/api/rooms/{room_id}/ai-plan")
-async def api_generate_plan(room_id: int, payload: AIPlanPayload = Body(...), username: str = Depends(get_current_user_token), session: AsyncSession = Depends(get_db),):
+@app.post("/api/shopping-lists/{list_id}/check-item")
+async def check_shopping_list_item(
+    list_id: int, 
+    payload: CheckItemPayload, 
+    username: str = Depends(get_current_user_token), 
+    session: AsyncSession = Depends(get_db)
+):
     """
-    Generate an AI-generated group plan for a room.
-    Goal is optional - if not provided, it will be inferred from chat history.
+    Toggle check status of an item in a shopping list.
+    If checked (true), add the item to user's inventory.
     """
-    
-    override_goal = payload.goal  # optional override from frontend
+    import re
     
     res = await session.execute(select(User).where(User.username == username))
-    user = res.scalar_one_or_none()
-    model_name = user.preferred_llm_model if user else "openai"
+    u = res.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=401, detail="Invalid user")
     
-    members_res = await session.execute(
-        select(User.username)
-        .join(RoomMember, RoomMember.user_id == User.id)
-        .where(RoomMember.room_id == room_id)
-    )
-    members = [row[0] for row in members_res.fetchall()]
-    
-    msgs_res = await session.execute(
-        select(Message)
-        .where(Message.room_id == room_id)
-        .order_by(Message.created_at)
-    )
-    msgs = msgs_res.scalars().all()
-    
-    chat_history = []
-    for m in msgs:
-        role = "assistant" if m.is_bot else "user"
-        chat_history.append({"role": role, "content": m.content})
+    lst = await session.get(ShoppingList, list_id)
+    if not lst:
+        raise HTTPException(status_code=404, detail="List not found")
         
-    plan = await generate_group_plan(
-        chat_history=chat_history,
-        goal=override_goal,
-        members=members,
-        model_name=model_name,
-    )
-    
-    return {"plan": plan}
-
-# Matching Suggestion
-@app.post("/api/rooms/{room_id}/ai-matching")
-async def api_generate_matching(room_id: int, payload: AIMatchingPayload = Body(...), username: str = Depends(get_current_user_token), session: AsyncSession = Depends(get_db),):
-    """
-    AI Matching Suggestion module:
-    - Extract goal automatically unless provided by frontend
-    - Detect assigned members from chat history
-    - Suggest available members or missing roles
-    """
-    
-    override_goal = payload.goal
-    
-    res = await session.execute(select(User).where(User.username == username))
-    user = res.scalar_one_or_none()
-    model_name = user.preferred_llm_model if user else "openai"
-    
-    members_res = await session.execute(
-        select(User.username)
-        .join(RoomMember, RoomMember.user_id == User.id)
-        .where(RoomMember.room_id == room_id)
-    )
-    members = [row[0] for row in members_res.fetchall()]
-    
-    # Get chat history
-    msgs_res = await session.execute(
-        select(Message)
-        .where(Message.room_id == room_id)
-        .order_by(Message.created_at) 
-    )
-    msgs = msgs_res.scalars().all()
-    
-    chat_history = []
-    for m in msgs:
-        role = "assistant" if m.is_bot else "user"
-        chat_history.append({"role": role, "content": m.content})
+    if lst.user_id != u.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
         
-    # Generate suggestion
-    suggestions = await suggest_invites(
-        members=members,
-        chat_history=chat_history,
-        goal=override_goal,
-        model_name=model_name,
-    )
+    # Parse items
+    try:
+        items = json.loads(lst.items_json)
+    except:
+        items = []
+        
+    if payload.index < 0 or payload.index >= len(items):
+        raise HTTPException(status_code=400, detail="Invalid item index")
+        
+    # Update item status
+    item = items[payload.index]
     
-    return {"suggestions": suggestions}
+    # Toggle check
+    current_checked = item.get("checked", False)
+    new_checked = not current_checked
+    item["checked"] = new_checked
+    items[payload.index] = item
+    
+    # Save list
+    lst.items_json = json.dumps(items)
+    session.add(lst)
+    
+    # If checked, add to inventory
+    if new_checked:
+        product_name = item.get("name", "Unknown Item")
+        quantity_str = str(item.get("quantity", "1"))
+        
+        # Extract number from quantity string (e.g. "2 lbs" -> 2)
+        qty = 1
+        match = re.search(r'(\d+)', quantity_str)
+        if match:
+            qty = int(match.group(1))
+            
+        # Upsert inventory
+        existing_res = await session.execute(
+            select(Inventory).where(
+                (Inventory.user_id == u.id) & (Inventory.product_name == product_name)
+            )
+        )
+        existing = existing_res.scalar_one_or_none()
+        
+        if existing:
+            existing.stock += qty
+            session.add(existing)
+        else:
+            new_inv = Inventory(
+                user_id=u.id,
+                product_name=product_name,
+                stock=qty,
+                safety_stock_level=0 # Default
+            )
+            session.add(new_inv)
+            
+    await session.commit()
+    
+    return {"ok": True, "checked": new_checked, "inventory_updated": new_checked}

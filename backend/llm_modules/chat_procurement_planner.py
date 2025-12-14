@@ -21,8 +21,12 @@ async def generate_procurement_plan(chat_history: List[Dict[str, str]], model_na
     CRITICAL LOGIC RULES:
     1. **Conflict Resolution**: If User A asks for an item, but User B says "we already have it" or "don't buy it", REMOVE it from the list.
     2. **Quantity Merging**: If User A says "buy 2 apples" and User B says "buy 3 more", the output should be "5 apples".
-    3. **Categorization**: Assign a logical category (e.g., Produce, Dairy, Meat, Household) to each item.
-    4. **Filtering**: Ignore casual chit-chat. Only list items explicitly requested for purchase.
+    3. **Unit Standardization**: 
+       - Convert vague units to standard ones where possible (e.g., "a dozen eggs" -> "12 eggs").
+       - If the item is usually counted by piece (e.g., apples, eggs, onions), try to output an integer quantity in the quantity string (e.g. "5").
+       - If the item is by weight/volume, keep the unit (e.g. "500g", "2 liters").
+    4. **Categorization**: Assign a logical category (e.g., Produce, Dairy, Meat, Household) to each item.
+    5. **Filtering**: Ignore casual chit-chat. Only list items explicitly requested for purchase.
 
     OUTPUT FORMAT (STRICT JSON ONLY):
     {
@@ -32,7 +36,7 @@ async def generate_procurement_plan(chat_history: List[Dict[str, str]], model_na
         "items": [
             {
                 "name": "<string (Item Name)>",
-                "quantity": "<string (e.g. '2 packs', '500g')>",
+                "quantity": "<string (e.g. '12', '500g', '2 packs')>",
                 "category": "<string (e.g. 'Produce', 'Dairy')>", 
                 "notes": "<string (Who asked for it, or specific brand mentioned)>"
             }

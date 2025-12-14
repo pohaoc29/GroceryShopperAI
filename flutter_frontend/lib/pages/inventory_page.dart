@@ -282,14 +282,49 @@ class _InventoryPageState extends State<InventoryPage> {
             ),
           ),
           children: [
-            ...items.map((item) => ListTile(
-                  dense: true,
-                  title: Text(item['name'] ?? ''),
-                  subtitle:
-                      Text('${item['quantity']} - ${item['notes'] ?? ''}'),
-                  leading: Icon(Icons.check_circle_outline,
-                      size: 16, color: kTextGray),
-                )),
+            ...items.asMap().entries.map((entry) {
+              final index = entry.key;
+              final item = entry.value;
+              final isChecked = item['checked'] == true;
+
+              return ListTile(
+                dense: true,
+                title: Text(
+                  item['name'] ?? '',
+                  style: TextStyle(
+                    decoration: isChecked ? TextDecoration.lineThrough : null,
+                    color: isChecked ? kTextGray : null,
+                  ),
+                ),
+                subtitle: Text('${item['quantity']} - ${item['notes'] ?? ''}'),
+                leading: IconButton(
+                  icon: Icon(
+                    isChecked ? Icons.check_circle : Icons.circle_outlined,
+                    color: isChecked ? Colors.green : kTextGray,
+                    size: 20,
+                  ),
+                  onPressed: () async {
+                    try {
+                      await apiClient.checkShoppingListItem(
+                          list['id'], index, item);
+                      _loadData(); // Reload to reflect changes
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(isChecked
+                              ? 'Item unchecked'
+                              : 'Item added to inventory!'),
+                          duration: Duration(seconds: 1),
+                        ),
+                      );
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error: $e')),
+                      );
+                    }
+                  },
+                ),
+              );
+            }),
             Padding(
               padding: const EdgeInsets.all(8.0),
               child: TextButton.icon(

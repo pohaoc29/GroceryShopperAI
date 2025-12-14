@@ -246,6 +246,14 @@ class ApiClient {
     await delete('/shopping-lists/$listId');
   }
 
+  Future<void> checkShoppingListItem(
+      int listId, int index, Map<String, dynamic> item) async {
+    await post('/shopping-lists/$listId/check-item', {
+      'index': index,
+      'item': item,
+    });
+  }
+
   // WebSocket Management
   WebSocketChannel? _channel;
   final _aiEventController = StreamController<AIEvent>.broadcast();
