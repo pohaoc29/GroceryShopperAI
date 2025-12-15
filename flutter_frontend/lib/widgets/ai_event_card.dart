@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../services/api_client.dart';
 import '../models/ai_event.dart';
 import '../pages/inventory_page.dart';
+import '../themes/colors.dart';
 
 class AIEventCard extends StatelessWidget {
   final AIEvent event;
@@ -35,7 +36,7 @@ class AIEventCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            
+
             // Narrative
             Text(
               event.narrative,
@@ -89,7 +90,8 @@ class _InventoryAnalysisWidget extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Inventory is empty.', style: TextStyle(fontStyle: FontStyle.italic)),
+          const Text('Inventory is empty.',
+              style: TextStyle(fontStyle: FontStyle.italic)),
           const SizedBox(height: 8),
           ElevatedButton.icon(
             onPressed: () {
@@ -109,57 +111,196 @@ class _InventoryAnalysisWidget extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (lowStock.isNotEmpty) ...[
-          const Text('⚠️ Low Stock:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
+          Row(
+            children: [
+              const Text('⚠️ Low Stock:',
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, color: Colors.red)),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.add_shopping_cart,
+                    size: 20, color: Colors.blue),
+                tooltip: 'Create Restock List',
+                onPressed: () => _showRestockDialog(context, lowStock),
+              ),
+            ],
+          ),
           ...lowStock.map((item) {
             final stock = item['stock'] ?? 0;
             final safety = item['safety_stock_level'] ?? 0;
             final name = item['product_name'] ?? 'Unknown';
             return Padding(
               padding: const EdgeInsets.only(left: 8, top: 4, bottom: 4),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text('• $name (Stock: $stock / Safety: $safety)'),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.add_shopping_cart, size: 20, color: Colors.blue),
-                    tooltip: 'Add to Shopping List',
-                    onPressed: () async {
-                      final quantity = (safety - stock) > 0 ? (safety - stock) : 1;
-                      final itemsJson = jsonEncode([
-                        {"item": name, "quantity": quantity, "unit": "unit"}
-                      ]);
-                      try {
-                        await apiClient.createShoppingList("Restock: $name", itemsJson);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Added "$name" to new shopping list')),
-                        );
-                      } catch (e) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Error: $e')),
-                        );
-                      }
-                    },
-                  ),
-                ],
-              ),
+              child: Text('• $name (Stock: $stock / Safety: $safety)'),
             );
           }),
           const SizedBox(height: 8),
         ],
         if (healthy.isNotEmpty) ...[
-          const Text('✅ Healthy:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
+          const Text('✅ Healthy:',
+              style:
+                  TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
           ...healthy.map((item) {
             final stock = item['stock'] ?? 0;
             final safety = item['safety_stock_level'] ?? 0;
             return Padding(
               padding: const EdgeInsets.only(left: 8, top: 4),
-              child: Text('• ${item['product_name']} (Stock: $stock / Safety: $safety)'),
+              child: Text(
+                  '• ${item['product_name']} (Stock: $stock / Safety: $safety)'),
             );
           }),
         ],
       ],
     );
+  }
+
+  void _showRestockDialog(BuildContext context, List<dynamic> lowStockItems) {
+    // Default: all selected
+    final selectedItems =
+        Set<String>.from(lowStockItems.map((e) => e['product_name'] as String));
+    
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              backgroundColor: isDark ? Color(0xFF1F2937) : Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Text(
+                'Create Restock List',
+                style: TextStyle(
+                  fontFamily: 'Boska',
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : kTextDark,
+                ),
+              ),
+              content: Container(
+                width: double.maxFinite,
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: lowStockItems.length,
+                  itemBuilder: (context, index) {
+                    final item = lowStockItems[index];
+                    final name = item['product_name'] as String;
+                    final stock = item['stock'] ?? 0;
+                    final safety = item['safety_stock_level'] ?? 0;
+                    final quantity =
+                        (safety - stock) > 0 ? (safety - stock) : 1;
+
+                    return CheckboxListTile(
+                      activeColor: kPrimary,
+                      checkColor: Colors.white,
+                      title: Text(
+                        name,
+                        style: TextStyle(
+                          fontFamily: 'Satoshi',
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : kTextDark,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Qty: $quantity (Stock: $stock)',
+                        style: TextStyle(
+                          fontFamily: 'Satoshi',
+                          color: kTextGray,
+                        ),
+                      ),
+                      value: selectedItems.contains(name),
+                      onChanged: (bool? value) {
+                        setState(() {
+                          if (value == true) {
+                            selectedItems.add(name);
+                          } else {
+                            selectedItems.remove(name);
+                          }
+                        });
+                      },
+                    );
+                  },
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(
+                      fontFamily: 'Satoshi',
+                      color: kTextGray,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kPrimary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  ),
+                  onPressed: selectedItems.isEmpty
+                      ? null
+                      : () async {
+                          Navigator.pop(context); // Close dialog first
+                          await _createShoppingList(
+                              context, lowStockItems, selectedItems);
+                        },
+                  child: Text(
+                    'Create List',
+                    style: TextStyle(
+                      fontFamily: 'Satoshi',
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _createShoppingList(BuildContext context, List<dynamic> allItems,
+      Set<String> selectedNames) async {
+    final itemsToBuy = allItems
+        .where((item) => selectedNames.contains(item['product_name']))
+        .map((item) {
+      final stock = item['stock'] ?? 0;
+      final safety = item['safety_stock_level'] ?? 0;
+      final quantity = (safety - stock) > 0 ? (safety - stock) : 1;
+
+      return {
+        "name": item['product_name'], // Fixed key from "item" to "name"
+        "quantity": quantity,
+        "unit": "unit",
+        "notes": "Auto-restock"
+      };
+    }).toList();
+
+    if (itemsToBuy.isEmpty) return;
+
+    final itemsJson = jsonEncode(itemsToBuy);
+    final title = "Restock ${DateTime.now().toString().substring(0, 10)}";
+
+    try {
+      await apiClient.createShoppingList(title, itemsJson);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content:
+                Text('Created shopping list with ${itemsToBuy.length} items')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error creating list: $e')),
+      );
+    }
   }
 }
 
@@ -181,8 +322,10 @@ class _MenuSuggestionsWidget extends StatelessWidget {
             leading: const Icon(Icons.restaurant),
             title: Text(dish['name'] ?? 'Unknown Dish'),
             subtitle: missing.isNotEmpty
-                ? Text('Missing: ${missing.join(", ")}', style: const TextStyle(color: Colors.red))
-                : const Text('Ready to cook!', style: TextStyle(color: Colors.green)),
+                ? Text('Missing: ${missing.join(", ")}',
+                    style: const TextStyle(color: Colors.red))
+                : const Text('Ready to cook!',
+                    style: TextStyle(color: Colors.green)),
           ),
         );
       }).toList(),
@@ -204,15 +347,16 @@ class _RestockPlanWidget extends StatelessWidget {
         if (event.summary.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Text(event.summary, style: const TextStyle(fontStyle: FontStyle.italic)),
+            child: Text(event.summary,
+                style: const TextStyle(fontStyle: FontStyle.italic)),
           ),
         ...items.map((item) => ListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: Text(item['name'] ?? ''),
-          subtitle: Text(item['notes'] ?? ''),
-          trailing: Text('\$${item['price_estimate'] ?? '?'}'),
-        )),
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: Text(item['name'] ?? ''),
+              subtitle: Text(item['notes'] ?? ''),
+              trailing: Text('\$${item['price_estimate'] ?? '?'}'),
+            )),
       ],
     );
   }
@@ -232,16 +376,17 @@ class _ProcurementPlanWidget extends StatelessWidget {
         if (event.goal.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Text('Goal: ${event.goal}', style: const TextStyle(fontWeight: FontWeight.bold)),
+            child: Text('Goal: ${event.goal}',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
           ),
         ...items.map((item) => CheckboxListTile(
-          value: false,
-          onChanged: null,
-          title: Text(item['name'] ?? ''),
-          subtitle: Text('${item['quantity']} - ${item['notes'] ?? ''}'),
-          dense: true,
-          controlAffinity: ListTileControlAffinity.leading,
-        )),
+              value: false,
+              onChanged: null,
+              title: Text(item['name'] ?? ''),
+              subtitle: Text('${item['quantity']} - ${item['notes'] ?? ''}'),
+              dense: true,
+              controlAffinity: ListTileControlAffinity.leading,
+            )),
         const SizedBox(height: 12),
         SizedBox(
           width: double.infinity,
@@ -263,12 +408,13 @@ class _ProcurementPlanWidget extends StatelessWidget {
     try {
       final items = event.procurementItems;
       final title = event.goal.isNotEmpty ? event.goal : 'Shopping List';
-      
+
       await apiClient.createShoppingList(title, jsonEncode(items));
-      
+
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Saved to Shopping List! Check Inventory page.')),
+          const SnackBar(
+              content: Text('Saved to Shopping List! Check Inventory page.')),
         );
       }
     } catch (e) {
