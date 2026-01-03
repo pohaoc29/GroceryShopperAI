@@ -25,7 +25,8 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   // late WebSocketChannel _channel; // Removed
 
   final _messageController = TextEditingController();
-  final _messages = <dynamic>[]; // Changed to dynamic to hold both Message and AIEvent
+  final _messages =
+      <dynamic>[]; // Changed to dynamic to hold both Message and AIEvent
   late String _currentUsername;
   bool _isConnecting = true;
   bool _hasError = false;
@@ -100,13 +101,28 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         apiClient.messageStream.listen((msgData) {
           if (mounted) {
             final msg = Message.fromJson(msgData);
-            setState(() {
-              _messages.add(msg);
-            });
+            if (msg.content.startsWith('AI_EVENT_JSON:')) {
+              try {
+                final jsonStr = msg.content.substring('AI_EVENT_JSON:'.length);
+                final eventData = jsonDecode(jsonStr);
+                setState(() {
+                  _messages.add(AIEvent.fromJson(eventData));
+                });
+              } catch (e) {
+                print('Error parsing AI event from stream: $e');
+                setState(() {
+                  _messages.add(msg);
+                });
+              }
+            } else {
+              setState(() {
+                _messages.add(msg);
+              });
+            }
             _scrollToBottom();
           }
         });
-        
+
         if (mounted) {
           setState(() => _isConnecting = false);
         }
@@ -137,7 +153,19 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       final res = await apiClient.getRoomMessages(int.parse(widget.roomId));
       _messages.clear();
       for (var item in res) {
-        _messages.add(Message.fromJson(item));
+        final msg = Message.fromJson(item);
+        if (msg.content.startsWith('AI_EVENT_JSON:')) {
+          try {
+            final jsonStr = msg.content.substring('AI_EVENT_JSON:'.length);
+            final eventData = jsonDecode(jsonStr);
+            _messages.add(AIEvent.fromJson(eventData));
+          } catch (e) {
+            print('Error parsing AI event from message: $e');
+            _messages.add(msg);
+          }
+        } else {
+          _messages.add(msg);
+        }
       }
       if (mounted) {
         setState(() {});
@@ -149,7 +177,6 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   }
 
   // _handleWebSocketMessage removed as it is replaced by stream listeners
-
 
   Future<void> _scrollToBottom() async {
     await Future.delayed(Duration(milliseconds: 100));
@@ -632,11 +659,11 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                                 itemCount: _messages.length,
                                 itemBuilder: (_, i) {
                                   final item = _messages[i];
-                                  
+
                                   if (item is AIEvent) {
                                     return AIEventCard(event: item);
                                   }
-                                  
+
                                   final msg = item as Message;
                                   final isCurrentUser =
                                       msg.username == _currentUsername;
@@ -759,7 +786,8 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                         Expanded(
                           child: FrostedGlassTextField(
                             controller: _messageController,
-                            placeholder: 'Try: @gro analyze, @gro menu, @gro restock, @gro plan',
+                            placeholder:
+                                'Try: @gro analyze, @gro menu, @gro restock, @gro plan',
                           ),
                         ),
                         SizedBox(width: 8),
@@ -788,5 +816,4 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       ),
     );
   }
-
 }

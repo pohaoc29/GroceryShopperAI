@@ -42,30 +42,50 @@ class _InventoryPageState extends State<InventoryPage> {
   }
 
   Future<void> _showEditDialog({Map<String, dynamic>? item}) async {
-    final nameController = TextEditingController(text: item?['product_name'] ?? '');
-    final stockController = TextEditingController(text: item?['stock']?.toString() ?? '0');
-    final safetyController = TextEditingController(text: item?['safety_stock_level']?.toString() ?? '0');
+    final nameController =
+        TextEditingController(text: item?['product_name'] ?? '');
+    final stockController =
+        TextEditingController(text: item?['stock']?.toString() ?? '0');
+    final safetyController = TextEditingController(
+        text: item?['safety_stock_level']?.toString() ?? '0');
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(item == null ? 'Add Item' : 'Edit Item'),
+        backgroundColor: isDark ? Color(0xFF1F2937) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          item == null ? 'Add Item' : 'Edit Item',
+          style: TextStyle(
+            fontFamily: 'Boska',
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: isDark ? Colors.white : kTextDark,
+          ),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
+            _buildStyledTextField(
               controller: nameController,
-              decoration: InputDecoration(labelText: 'Product Name'),
-              enabled: item == null, // Name is unique key in backend logic for now
+              label: 'Product Name',
+              isDark: isDark,
+              enabled: item == null,
             ),
-            TextField(
+            SizedBox(height: 16),
+            _buildStyledTextField(
               controller: stockController,
-              decoration: InputDecoration(labelText: 'Stock'),
+              label: 'Stock',
+              isDark: isDark,
               keyboardType: TextInputType.number,
             ),
-            TextField(
+            SizedBox(height: 16),
+            _buildStyledTextField(
               controller: safetyController,
-              decoration: InputDecoration(labelText: 'Safety Stock Level'),
+              label: 'Safety Stock Level',
+              isDark: isDark,
               keyboardType: TextInputType.number,
             ),
           ],
@@ -73,9 +93,24 @@ class _InventoryPageState extends State<InventoryPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel'),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                fontFamily: 'Satoshi',
+                color: kTextGray,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: kPrimary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
             onPressed: () async {
               try {
                 await apiClient.upsertInventoryItem(
@@ -91,9 +126,51 @@ class _InventoryPageState extends State<InventoryPage> {
                 );
               }
             },
-            child: Text('Save'),
+            child: Text(
+              'Save',
+              style: TextStyle(
+                fontFamily: 'Satoshi',
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildStyledTextField({
+    required TextEditingController controller,
+    required String label,
+    required bool isDark,
+    bool enabled = true,
+    TextInputType? keyboardType,
+  }) {
+    return TextField(
+      controller: controller,
+      enabled: enabled,
+      keyboardType: keyboardType,
+      style: TextStyle(
+        fontFamily: 'Satoshi',
+        color: isDark ? Colors.white : kTextDark,
+      ),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(
+          fontFamily: 'Satoshi',
+          color: kTextGray,
+        ),
+        filled: true,
+        fillColor: isDark ? Colors.black.withOpacity(0.2) : kBgLight,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: kPrimary, width: 1.5),
+        ),
+        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       ),
     );
   }
@@ -154,6 +231,13 @@ class _InventoryPageState extends State<InventoryPage> {
               ),
               centerTitle: true,
               elevation: 0,
+              actions: [
+                IconButton(
+                  icon: Icon(Icons.add),
+                  onPressed: () => _showEditDialog(),
+                ),
+                SizedBox(width: 8),
+              ],
             ),
           ),
         ),
@@ -163,7 +247,8 @@ class _InventoryPageState extends State<InventoryPage> {
           : RefreshIndicator(
               onRefresh: _loadData,
               child: ListView(
-                padding: EdgeInsets.all(16),
+                padding:
+                    EdgeInsets.only(bottom: 100, left: 16, right: 16, top: 16),
                 children: [
                   // Shopping Lists Section
                   if (_shoppingLists.isNotEmpty) ...[
@@ -177,7 +262,8 @@ class _InventoryPageState extends State<InventoryPage> {
                       ),
                     ),
                     SizedBox(height: 12),
-                    ..._shoppingLists.map((list) => _buildShoppingListCard(context, list, isDark)),
+                    ..._shoppingLists.map((list) =>
+                        _buildShoppingListCard(context, list, isDark)),
                     SizedBox(height: 24),
                   ],
 
@@ -206,20 +292,16 @@ class _InventoryPageState extends State<InventoryPage> {
                       ),
                     )
                   else
-                    ..._items.map((item) => _buildInventoryItemCard(context, item, isDark)),
+                    ..._items.map((item) =>
+                        _buildInventoryItemCard(context, item, isDark)),
                 ],
               ),
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showEditDialog(),
-        child: Icon(Icons.add),
-        backgroundColor: isDark ? Colors.cyan : kPrimary,
-        elevation: 4,
-      ),
     );
   }
 
-  Widget _buildShoppingListCard(BuildContext context, dynamic list, bool isDark) {
+  Widget _buildShoppingListCard(
+      BuildContext context, dynamic list, bool isDark) {
     // Parse items JSON
     List<dynamic> items = [];
     try {
@@ -229,10 +311,14 @@ class _InventoryPageState extends State<InventoryPage> {
     return Container(
       margin: EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: isDark ? Colors.indigo.withOpacity(0.2) : Colors.blue.withOpacity(0.05),
+        color: isDark
+            ? Colors.indigo.withOpacity(0.2)
+            : Colors.blue.withOpacity(0.05),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isDark ? Colors.indigo.withOpacity(0.3) : Colors.blue.withOpacity(0.2),
+          color: isDark
+              ? Colors.indigo.withOpacity(0.3)
+              : Colors.blue.withOpacity(0.2),
         ),
       ),
       child: Theme(
@@ -242,7 +328,9 @@ class _InventoryPageState extends State<InventoryPage> {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: isDark ? Colors.indigo.withOpacity(0.3) : Colors.blue.withOpacity(0.1),
+              color: isDark
+                  ? Colors.indigo.withOpacity(0.3)
+                  : Colors.blue.withOpacity(0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
@@ -267,12 +355,49 @@ class _InventoryPageState extends State<InventoryPage> {
             ),
           ),
           children: [
-            ...items.map((item) => ListTile(
-              dense: true,
-              title: Text(item['name'] ?? ''),
-              subtitle: Text('${item['quantity']} - ${item['notes'] ?? ''}'),
-              leading: Icon(Icons.check_circle_outline, size: 16, color: kTextGray),
-            )),
+            ...items.asMap().entries.map((entry) {
+              final index = entry.key;
+              final item = entry.value;
+              final isChecked = item['checked'] == true;
+
+              return ListTile(
+                dense: true,
+                title: Text(
+                  item['name'] ?? '',
+                  style: TextStyle(
+                    decoration: isChecked ? TextDecoration.lineThrough : null,
+                    color: isChecked ? kTextGray : null,
+                  ),
+                ),
+                subtitle: Text('${item['quantity']} - ${item['notes'] ?? ''}'),
+                leading: IconButton(
+                  icon: Icon(
+                    isChecked ? Icons.check_circle : Icons.circle_outlined,
+                    color: isChecked ? Colors.green : kTextGray,
+                    size: 20,
+                  ),
+                  onPressed: () async {
+                    try {
+                      await apiClient.checkShoppingListItem(
+                          list['id'], index, item);
+                      _loadData(); // Reload to reflect changes
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(isChecked
+                              ? 'Item unchecked'
+                              : 'Item added to inventory!'),
+                          duration: Duration(seconds: 1),
+                        ),
+                      );
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error: $e')),
+                      );
+                    }
+                  },
+                ),
+              );
+            }),
             Padding(
               padding: const EdgeInsets.all(8.0),
               child: TextButton.icon(
@@ -288,7 +413,8 @@ class _InventoryPageState extends State<InventoryPage> {
     );
   }
 
-  Widget _buildInventoryItemCard(BuildContext context, dynamic item, bool isDark) {
+  Widget _buildInventoryItemCard(
+      BuildContext context, dynamic item, bool isDark) {
     return Container(
       margin: EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(

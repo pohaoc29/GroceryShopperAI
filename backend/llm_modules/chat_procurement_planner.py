@@ -7,35 +7,45 @@ from llm import chat_completion
 async def generate_procurement_plan(chat_history: List[Dict[str, str]], model_name: str = "openai",) -> Dict[str, Any]:
     """
     Chat-based procurement planner
-    Generate a procurement (shopping) plan based purely on chat history.
+    Generates a consolidated shopping list by analyzing user intent, resolving conflicts, and merging quantities.
     """
     
     inferred_goal = await extract_goal(chat_history, model_name=model_name)
     chat_text = format_chat_history(chat_history)
     
     system_prompt = """
-    You are an AI Procurement Planner.
+    You are an intelligent AI Procurement Planner.
+    
+    Your goal is to create a consolidated shopping list based on the chat history.
 
-    Convert the chat history and goal into a structured JSON procurement plan.
+    CRITICAL LOGIC RULES:
+    1. **Conflict Resolution**: If User A asks for an item, but User B says "we already have it" or "don't buy it", REMOVE it from the list.
+    2. **Quantity Merging**: If User A says "buy 2 apples" and User B says "buy 3 more", the output should be "5 apples".
+    3. **Unit Standardization**: 
+       - Convert vague units to standard ones where possible (e.g., "a dozen eggs" -> "12 eggs").
+       - If the item is usually counted by piece (e.g., apples, eggs, onions), try to output an integer quantity in the quantity string (e.g. "5").
+       - If the item is by weight/volume, keep the unit (e.g. "500g", "2 liters").
+    4. **Categorization**: Assign a logical category (e.g., Produce, Dairy, Meat, Household) to each item.
+    5. **Filtering**: Ignore casual chit-chat. Only list items explicitly requested for purchase.
 
-    RULES:
-    - Output ONLY VALID JSON. 
-    - DO NOT add commentary outside JSON.
-    - Use EXACT FIELD NAMES below.
-
-    JSON FORMAT:
+    OUTPUT FORMAT (STRICT JSON ONLY):
     {
-        "goal": "<string>",
-        "summary": "<string>",
-        "narrative": "<string>",
+        "goal": "<string (The extracted event or goal)>",
+        "summary": "<string (A brief 1-sentence summary of the plan)>",
+        "narrative": "<string (A friendly, human-like explanation of what was decided)>",
         "items": [
             {
-                "name": "<string>",
-                "quantity": "<string or number>",
-                "notes": "<string>"
+                "name": "<string (Item Name)>",
+                "quantity": "<string (e.g. '12', '500g', '2 packs')>",
+                "category": "<string (e.g. 'Produce', 'Dairy')>", 
+                "notes": "<string (Who asked for it, or specific brand mentioned)>"
             }
         ]
     }
+    
+    IMPORTANT:
+    - Output ONLY VALID JSON. 
+    - Do NOT include markdown formatting like ```json ... ```.
     """
 
     
@@ -59,7 +69,7 @@ async def generate_procurement_plan(chat_history: List[Dict[str, str]], model_na
     
     return {
         "goal": data.get("goal", inferred_goal),
-        "summary": data.get("summary", "Here is your shopping summary."),
-        "narrative": data.get("narrative", "Here is your procurement plan."),
+        "summary": data.get("summary", "Shopping list generated."),
+        "narrative": data.get("narrative", "Here is your consolidated shopping plan."),
         "items": data.get("items", []),
     }

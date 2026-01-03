@@ -19,15 +19,15 @@ String _getApiBase() {
     final backendHost = 'localhost';
     final backendPort = 8000;
     //return 'http://$backendHost:$backendPort/api';
-    return 'https://gsai-backend-52101160479.us-west1.run.app/api';
+    return 'https://groceryshopperai-52101160479.us-west1.run.app/api';
   } else if (useAndroidEmulator) {
     // Android Emulator
     //return 'http://10.0.2.2:8000/api';
-    return 'https://gsai-backend-52101160479.us-west1.run.app/api';
+    return 'https://groceryshopperai-52101160479.us-west1.run.app/api';
   } else {
     // iOS 或 macOS
     //return 'http://localhost:8000/api';
-    return 'https://gsai-backend-52101160479.us-west1.run.app/api';
+    return 'https://groceryshopperai-52101160479.us-west1.run.app/api';
   }
 }
 
@@ -36,15 +36,15 @@ String _getWsUrl() {
     // Web: 使用 localhost:8000 for development
     // In production, change to your backend URL
     //return 'ws://localhost:8000/ws';
-    return 'wss://gsai-backend-52101160479.us-west1.run.app/ws';
+    return 'wss://groceryshopperai-52101160479.us-west1.run.app/ws';
   } else if (useAndroidEmulator) {
     // Android Emulator
     //return 'ws://10.0.2.2:8000/ws';
-    return 'wss://gsai-backend-52101160479.us-west1.run.app/ws';
+    return 'wss://groceryshopperai-52101160479.us-west1.run.app/ws';
   } else {
     // iOS 或 macOS
     //return 'ws://localhost:8000/ws';
-    return 'wss://gsai-backend-52101160479.us-west1.run.app/ws';
+    return 'wss://groceryshopperai-52101160479.us-west1.run.app/ws';
   }
 }
 
@@ -217,7 +217,8 @@ class ApiClient {
     return res['items'] as List<dynamic>;
   }
 
-  Future<void> upsertInventoryItem(String name, int stock, int safetyStock) async {
+  Future<void> upsertInventoryItem(
+      String name, int stock, int safetyStock) async {
     await post('/inventory', {
       'product_name': name,
       'stock': stock,
@@ -246,11 +247,19 @@ class ApiClient {
     await delete('/shopping-lists/$listId');
   }
 
+  Future<void> checkShoppingListItem(
+      int listId, int index, Map<String, dynamic> item) async {
+    await post('/shopping-lists/$listId/check-item', {
+      'index': index,
+      'item': item,
+    });
+  }
+
   // WebSocket Management
   WebSocketChannel? _channel;
   final _aiEventController = StreamController<AIEvent>.broadcast();
   final _messageController = StreamController<Map<String, dynamic>>.broadcast();
-  
+
   Stream<AIEvent> get aiEventStream => _aiEventController.stream;
   Stream<Map<String, dynamic>> get messageStream => _messageController.stream;
 
@@ -259,10 +268,10 @@ class ApiClient {
 
     final url = '$wsUrl?room_id=$roomId';
     print('[ApiClient] Connecting to WebSocket: $url');
-    
+
     try {
       _channel = WebSocketChannel.connect(Uri.parse(url));
-      
+
       _channel!.stream.listen(
         (message) {
           print('[ApiClient] WS Message: $message');
